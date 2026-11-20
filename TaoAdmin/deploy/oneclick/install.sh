@@ -11,7 +11,7 @@
 # 卸载: ./uninstall.sh
 #
 # 容器路线 —— 自动安装 Docker（如缺失，需 sudo），然后 docker compose 一键起全部服务
-# 原生路线 —— 不用容器：检查/补装 .NET 10 SDK、Node 20、MySQL/MariaDB、Redis，
+# 原生路线 —— 不用容器：检查/补装 .NET 10 SDK、Node 22、MySQL/MariaDB、Redis，
 #             然后调用 deploy.sh 完成编译、初始化与服务拉起（幂等 + 断点续跑）
 # ============================================================================
 set -uo pipefail
@@ -42,7 +42,7 @@ choose_route() {
   echo "  [1] 容器路线 —— Docker 一键编排全部服务"
   echo "        （未安装 Docker 会自动安装：需要 sudo 权限）"
   echo "  [2] 原生路线 —— 不用任何容器，直接编译运行"
-  echo "        （缺依赖会提示自动补装：.NET 10 SDK / Node 20 / MySQL / Redis）"
+  echo "        （缺依赖会提示自动补装：.NET 10 SDK / Node 22 / MySQL / Redis）"
   echo "========================================================"
   read -rp "输入 1 或 2 后回车（直接回车默认选 2 原生路线）: " choice
   if [[ "$choice" == "1" ]]; then ROUTE="docker"; else ROUTE="native"; fi

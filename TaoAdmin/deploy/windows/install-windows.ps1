@@ -42,7 +42,7 @@ $script:SqlFile    = Join-Path $Root 'deploy\sql\tao_admin_init.sql'
 $script:ComposeDir = Join-Path $Root 'deploy'
 $script:DbPwd      = 'Micro@2026'
 $script:MySQLVer   = '8.0.37'
-$script:NodeVer    = 'v20.18.1'
+$script:NodeVer    = 'v22.23.5'
 
 # —— 官方下载源（2026-11-20 逐一核验 200）——
 $script:Urls = @{
