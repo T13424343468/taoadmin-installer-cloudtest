@@ -1,0 +1,226 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TaoAdmin 项目思维导图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f7fa;
+    padding: 40px;
+    overflow-x: auto;
+  }
+  h1 { text-align: center; color: #1f2d3d; margin-bottom: 8px; font-size: 26px; }
+  .sub { text-align: center; color: #8492a6; font-size: 13px; margin-bottom: 32px; }
+
+  /* 横向树：根在左，分支向右展开 */
+  .tree { display: flex; align-items: center; justify-content: center; }
+  .root {
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: #fff; font-size: 20px; font-weight: 700;
+    padding: 26px 30px; border-radius: 14px; white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(30,60,114,.35);
+    text-align: center; line-height: 1.5;
+  }
+  .root small { display: block; font-size: 12px; font-weight: 400; opacity: .8; }
+  .branches { display: flex; flex-direction: column; gap: 14px; margin-left: 48px; position: relative; }
+  /* 连接线：根 → 各分支 */
+  .branches::before {
+    content: ""; position: absolute; left: -34px; top: 50%;
+    width: 34px; height: 2px; background: #b8c7da;
+  }
+  .branch { position: relative; }
+  /* 连接线：主干部 → 分支 */
+  .branch::before {
+    content: ""; position: absolute; left: -34px; top: 50%;
+    width: 34px; height: 2px; background: #b8c7da;
+  }
+  .branches > .branch:first-child::after,
+  .branches > .branch:last-child::after { content: none; }
+  /* 垂直主干：贯穿各分支左侧 */
+  .branches::after {
+    content: ""; position: absolute; left: -34px; top: 24px; bottom: 24px;
+    width: 2px; background: #b8c7da;
+  }
+
+  .node {
+    padding: 10px 18px; border-radius: 8px; color: #fff;
+    font-weight: 600; font-size: 15px; white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  }
+  .branch { display: flex; align-items: center; }
+  .children { margin-left: 40px; display: flex; flex-direction: column; gap: 5px; position: relative; }
+  .children::before {
+    content: ""; position: absolute; left: -20px; top: 50%; width: 20px; height: 2px; background: #cbd6e2;
+  }
+  .children::after {
+    content: ""; position: absolute; left: -20px; top: 14px; bottom: 14px; width: 2px; background: #cbd6e2;
+  }
+  .leaf {
+    position: relative; padding: 5px 12px; background: #fff;
+    border: 1px solid #dfe6ee; border-radius: 6px; font-size: 13px; color: #3c4858;
+    white-space: nowrap;
+  }
+  .leaf::before {
+    content: ""; position: absolute; left: -20px; top: 50%; width: 20px; height: 2px; background: #cbd6e2;
+  }
+  /* 各分支配色 */
+  .c-auth  { background: #2a5298; }
+  .c-frontend { background: #7b4397; }
+  .c-infra { background: #1f8a70; }
+  .c-monitor { background: #d17b0f; }
+  .c-task { background: #b03a5b; }
+  .c-arch { background: #4a6fa5; }
+  .c-doc { background: #5f6b7a; }
+
+  .legend { text-align: center; margin-top: 36px; color: #8492a6; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>TaoAdmin 项目思维导图</h1>
+  <div class="sub">微服务权限框架 · .NET 10 + SqlSugar + MySQL + Ant Design Vue · 2026-11（适用版本：2026-11-18 主干）</div>
+
+  <div class="tree">
+    <div class="root">TaoAdmin<small>微服务后台基础底座</small></div>
+    <div class="branches">
+
+      <div class="branch">
+        <div class="node c-auth">权限模型</div>
+        <div class="children">
+          <div class="leaf">认证：账号密码登录 · JWT 令牌 · 刷新令牌 · SVG 图形验证码（默认必填）</div>
+          <div class="leaf">登录防护：连错 5 次锁 15 分钟 · 判锁先于密码校验 · 成功即清零</div>
+          <div class="leaf">用户管理：增删改查 · 启停 · 重置密码 · 分配角色</div>
+          <div class="leaf">角色管理：角色 CRUD · 绑定菜单 · 绑定接口</div>
+          <div class="leaf">菜单权限：目录/菜单/按钮三级 · 动态路由 · 显隐控制</div>
+          <div class="leaf">接口权限：权限码登记 · 前端按钮显隐 + 后端二次校验</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-frontend">前端（Vue3 + Ant Design Vue）</div>
+        <div class="children">
+          <div class="leaf">MVVM：组合式 API · 响应式绑定</div>
+          <div class="leaf">动态路由：登录后按菜单树生成</div>
+          <div class="leaf">公用组件：FilterBar 筛选栏（一行 + 展开）</div>
+          <div class="leaf">页面：工作台 · 用户/角色/菜单/接口 · 任务 · 监控 · 日志 · 登录安全 · 审计日志 · 通知渠道</div>
+          <div class="leaf">v-permission 指令：按钮级权限</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-arch">后端分层（DDD）</div>
+        <div class="children">
+          <div class="leaf">Domain 领域层：实体 + 仓储接口 + 领域异常</div>
+          <div class="leaf">Application 应用层：应用服务 + DTO（对齐前端契约）</div>
+          <div class="leaf">Infrastructure 基础设施：SqlSugar 仓储 + CodeFirst 初始化</div>
+          <div class="leaf">IdentityService 5001：权限服务（瘦控制器）</div>
+          <div class="leaf">TaskService 5002：Quartz 定时任务服务</div>
+          <div class="leaf">GatewayService 5000：YARP 网关 · 鉴权 · 限流 · 熔断 · TraceId</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-task">多租户与工作流</div>
+        <div class="children">
+          <div class="leaf">多租户：租户管理 · ITenantEntity 自动过滤 · 平台公共数据(TenantId=0)全租户可见</div>
+          <div class="leaf">租户上下文：JWT tenant_id 声明 · X-Tenant-Id 覆盖 · 总开关可关闭</div>
+          <div class="leaf">工作流：线性审批流模板（JSON 节点）· 发起 → 逐级审批 → 通过/驳回</div>
+          <div class="leaf">待办任务：按角色查看 · 租户隔离 · 超管跨租户审批</div>
+          <div class="leaf">演示数据：华东/华南双租户 · 请假(两级)/报销(一级)模板 · 全状态实例</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-infra">消息队列与网关防护</div>
+        <div class="children">
+          <div class="leaf">消息队列：IMessageQueue 抽象 · 内存实现（默认）/ RabbitMQ 双实现一键切换</div>
+          <div class="leaf">订阅泵：启动时自动注册 IMessageHandler 常驻消费 · 单条失败不中断</div>
+          <div class="leaf">内置示例：user.created 欢迎消息 · demo.test 演示落库</div>
+          <div class="leaf">接口幂等：Idempotency-Key 防重 · 重放返回原响应 · TTL 600s</div>
+          <div class="leaf">网关限流：固定窗口 100 次/10s · 用户/IP 分桶 · 超限 429</div>
+          <div class="leaf">网关熔断：连续 5 次失败熔断 · 快速失败 503 · 冷却 30s 半开恢复</div>
+          <div class="leaf">接口文档：三个服务均内置 Swagger（/swagger）· 中文标题描述</div>
+          <div class="leaf">操作日志：写操作 + 登录审计（成败均记账号）· IP/耗时/TraceId · 异步落库</div>
+          <div class="leaf">数据字典：类型/明细维护 · 按编码取下拉明细 · 内置性别/状态种子 · 租户隔离</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-auth">防护审计</div>
+        <div class="children">
+          <div class="leaf">验证码：SVG 输出 · 4 位去 0O1lI · 一次性消费 · 5 分钟有效 · 开关/阈值可配</div>
+          <div class="leaf">登录安全页：五项配置存 sys_site_config · 保存即生效不重启</div>
+          <div class="leaf">审计日志页：类别/账号/结果/时间筛选 · 管理操作自动留痕（AuditTrail）</div>
+          <div class="leaf">日志保留：默认 90 天（0=永久）· 手动清理返回删除数</div>
+          <div class="leaf">通知渠道页：SMTP/短信配置留存 · 发送通道占位（只埋不接线）</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-infra">文件中心（基础框架内置）</div>
+        <div class="children">
+          <div class="leaf">接口：/api/identity/files/** · 上传/分页/删除需 sys:file:manage · 下载登录即可（无令牌 401）</div>
+          <div class="leaf">上传：MD5 秒传去重（deduplicated）· 16 种扩展名白名单 · 5MB 上限</div>
+          <div class="leaf">下载：仅 /uploads 前缀路径 · 原文件名交付 · 记录不存在 404</div>
+          <div class="leaf">删除：软删 + 物理删 · 删后原路径 404</div>
+          <div class="leaf">存储切换：FileStorage:Provider = local（默认）/ minio（S3 兼容，数据不出内网）· 业务零改动</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-infra">文件中心（独立解决方案 TaoFiles）</div>
+        <div class="children">
+          <div class="leaf">独立部署：TaoFiles 单独运行，业务系统零耦合集成</div>
+          <div class="leaf">上传：MD5 去重/秒传 · 扩展名白名单 · 大小限制 · 雪花 ID 重命名</div>
+          <div class="leaf">业务集成：只存返回的相对路径，拼服务地址即可访问</div>
+          <div class="leaf">管理页面：上传/搜索/缩略图/复制路径/删除，开箱即用</div>
+          <div class="leaf">存储抽象：本地磁盘实现（可换 MinIO/OSS）· 可选 API Key</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-infra">基础设施</div>
+        <div class="children">
+          <div class="leaf">MySQL 8：业务数据 · CodeFirst 自动迁移 · 主从读写分离</div>
+          <div class="leaf">Redis 7：缓存 · 心跳 · 刷新令牌</div>
+          <div class="leaf">Nacos v2（可选）：注册中心 + 配置中心</div>
+          <div class="leaf">Elasticsearch（可选）：分布式日志存储</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-monitor">可观测性</div>
+        <div class="children">
+          <div class="leaf">服务监控中心：健康状态 · 实例数 · 版本</div>
+          <div class="leaf">日志中心：级别/服务/关键字/TraceId 检索 · 堆栈详情</div>
+          <div class="leaf">TraceId 全链路贯穿（网关生成透传）</div>
+          <div class="leaf">本地文件日志 + ES 双写（可选）</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-task">定时任务（Quartz）</div>
+        <div class="children">
+          <div class="leaf">任务 CRUD：Cron 表达式 · 处理器 · 参数</div>
+          <div class="leaf">任务控制：立即执行 · 暂停 · 恢复 · 删除</div>
+          <div class="leaf">示例任务 heartbeatJob：每 30s 写 Redis 心跳</div>
+        </div>
+      </div>
+
+      <div class="branch">
+        <div class="node c-doc">工程化</div>
+        <div class="children">
+          <div class="leaf">TaoAdmin.Utilities 公用工具库（加解密/JSON/HTTP/树…）</div>
+          <div class="leaf">部署：Docker Compose · Jenkins · GitHub Actions · K8s</div>
+          <div class="leaf">单元测试：xUnit（雪花 ID 唯一性等）</div>
+          <div class="leaf">文档：需求 · 架构图 · 操作手册 · 运维教程</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="legend">浏览器直接打开本文件即可查看；节点颜色区分领域，线条表示从属关系。</div>
+</body>
+</html>

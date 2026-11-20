@@ -1,0 +1,28 @@
+# ===== .NET =====
+bin/
+obj/
+publish/
+*.user
+*.suo
+
+# ===== Node / 前端 =====
+node_modules/
+dist/
+.vite/
+*.local
+
+# ===== 环境与密钥 =====
+.env
+.env.*
+deploy/k8s/secret.yaml
+*.pem
+*.key
+
+# ===== IDE =====
+.vs/
+.vscode/
+.idea/
+
+# ===== 其他 =====
+logs/
+*.log

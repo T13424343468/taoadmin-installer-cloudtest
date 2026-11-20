@@ -1,0 +1,39 @@
+name: installer-cloudtest
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  native-route:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert disk space
+        shell: pwsh
+        run: |
+          $d = Get-PSDrive D
+          $free = [int]($d.Free/1GB)
+          Write-Host "D: free $free GB"
+          if ($free -lt 8) { throw "disk free under 8GB: $free" }
+      - name: Stop preinstalled MySQL
+        shell: pwsh
+        run: |
+          Get-Service | Where-Object { $_.Name -like 'MySQL*' } | ForEach-Object {
+            Write-Host "stopping $($_.Name)"
+            Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
+          }
+      - name: Run installer (native route, real run)
+        shell: pwsh
+        run: ./TaoAdmin/deploy/windows/install-windows.ps1 -Action install -Route native -Force
+      - name: Status after install
+        if: always()
+        shell: pwsh
+        run: ./TaoAdmin/deploy/windows/install-windows.ps1 -Action status
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-logs
+          path: TaoAdmin/deploy/windows/runtime/logs/

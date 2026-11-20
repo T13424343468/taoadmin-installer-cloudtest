@@ -1,0 +1,136 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TaoAdmin 项目架构图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #eef2f7; padding: 36px; color: #1f2d3d;
+  }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 6px; }
+  .sub { text-align: center; color: #8492a6; font-size: 13px; margin-bottom: 28px; }
+  .canvas { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  .layer {
+    background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 8px rgba(31,45,61,.08);
+  }
+  .layer-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; color: #8492a6; font-weight: 400; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .box {
+    flex: 1; min-width: 150px; border-radius: 8px; padding: 10px 12px;
+    font-size: 13px; line-height: 1.6; border: 1px solid transparent;
+  }
+  .box b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+  .box small { color: inherit; opacity: .78; font-size: 12px; }
+
+  .b-client { background: #e8f1fd; border-color: #bcd6f7; color: #1d4e9e; }
+  .b-gw     { background: #fff4e5; border-color: #ffd9a0; color: #9a6200; }
+  .b-svc    { background: #e9f7ef; border-color: #b5e0c6; color: #1e7145; }
+  .b-domain { background: #f3e9fb; border-color: #dcc2f2; color: #6b2fa0; }
+  .b-mid    { background: #e0f4f6; border-color: #b0dee4; color: #0e6e7e; }
+  .b-obs    { background: #fdeaea; border-color: #f5c2c2; color: #a93232; }
+  .b-deploy { background: #eef1f5; border-color: #cfd8e3; color: #4a5a6e; }
+
+  .arrow-row { text-align: center; color: #8fa3ba; font-size: 18px; line-height: 1; }
+
+  .ports { font-size: 11px; opacity: .75; }
+
+  .flow { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .flow .step {
+    background: #fff; border: 1px dashed #b8c7da; border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; color: #4a5a6e;
+  }
+</style>
+</head>
+<body>
+  <h1>TaoAdmin 项目架构图</h1>
+  <div class="sub">自上而下：客户端 → 网关 → 服务（DDD 分层）→ 中间件；右侧为可观测性与部署形态 ｜ 适用版本：2026-11-18 主干 · 2026-11-19</div>
+
+  <div class="canvas">
+
+    <div class="layer">
+      <div class="layer-title">① 客户端层 <span class="tag">浏览器访问</span></div>
+      <div class="row">
+        <div class="box b-client"><b>管理后台前端（Vue3 + Ant Design Vue）</b>验证码登录 · 动态路由 · 用户/角色/菜单/接口管理 · 定时任务 · 监控 · 日志中心 · 登录安全 · 审计日志 · 通知渠道</div>
+        <div class="box b-client"><b>其它接入方</b>第三方系统可走网关 OpenAPI（携带 JWT）</div>
+      </div>
+    </div>
+
+    <div class="arrow-row">▼ HTTPS ▼</div>
+
+    <div class="layer">
+      <div class="layer-title">② 接入层 <span class="tag">统一入口</span></div>
+      <div class="row">
+        <div class="box b-gw"><b>Nginx / 负载均衡</b>托管前端静态文件 · /api 反代 · SPA 回退 <span class="ports">:80/:443</span></div>
+        <div class="box b-gw"><b>TaoAdmin 网关（YARP）</b>JWT 验签 · 限流（100次/10s · 用户/IP 分桶）· 熔断（连续5次失败 → 503 快速失败）· 跨域 · 路由转发 · TraceId 生成 <span class="ports">:5000</span></div>
+      </div>
+      <div class="flow">
+        <div class="step">/api/identity/** → 权限服务（含 /files/** 文件中心、/audit/** 防护审计）</div>
+        <div class="step">/api/job/** → 任务服务</div>
+        <div class="step">/api/monitor/** → 监控接口（权限服务内）</div>
+      </div>
+    </div>
+
+    <div class="arrow-row">▼ 转发 ▼</div>
+
+    <div class="layer">
+      <div class="layer-title">③ 业务服务层（DDD 分层，可水平扩展）</div>
+      <div class="row">
+        <div class="box b-svc"><b>IdentityService 权限服务 :5001</b>验证码/锁定防护登录 · 用户/角色/菜单/接口 CRUD · 多租户管理 · 工作流审批 · 消息队列 · 服务监控 · 日志查询 · 防护审计（验证码/登录安全/审计日志/通知渠道） · 内置文件中心（/files 上传秒传/下载/删除）</div>
+        <div class="box b-svc"><b>TaskService 任务服务 :5002</b>Quartz 调度 · 任务 CRUD · 暂停/恢复/执行 · Redis 心跳</div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div class="box b-domain"><b>Domain 领域层</b>SysUser/SysRole/SysMenu/SysApi/SysJob/SysTenant/SysMessage/SysWorkflow*/SysFile 实体 · 仓储接口 · 领域异常</div>
+        <div class="box b-domain"><b>Application 应用层</b>应用服务 · DTO · 权限校验 · 多租户过滤与工作流引擎 · 文件中心（FileAppService）· 审计留痕/清理</div>
+        <div class="box b-domain"><b>Infrastructure 基础设施层</b>SqlSugar 仓储实现 · CodeFirst 建表 · 幂等种子数据（租户/工作流/消息/防护审计菜单）</div>
+        <div class="box b-domain"><b>Common 公共库</b>JWT · Redis · SqlSugar 封装（租户过滤器）· 消息队列抽象（内存/RabbitMQ）· 幂等中间件 · 权限授权 · 统一返回 · SVG 验证码 · 登录锁定账本 · 存储抽象（本地盘/MinIO）</div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div class="box b-domain"><b>TaoAdmin.Utilities 工具库</b>StringHelper · CryptoHelper · JsonHelper · DateTimeHelper · HttpHelper · ValidateHelper · TreeHelper</div>
+      </div>
+    </div>
+
+    <div class="arrow-row">▼ 读写 ▼</div>
+
+    <div class="layer">
+      <div class="layer-title">④ 中间件层</div>
+      <div class="row">
+        <div class="box b-mid"><b>MySQL 8 :3306</b>业务数据（含 sys_file 文件记录）· CodeFirst 自动迁移 · 种子数据（admin 账号）</div>
+        <div class="box b-mid"><b>MySQL 从库 ×N（可选）</b>主从复制 · 只读查询分流（连接串配置 + 总开关）</div>
+        <div class="box b-mid"><b>MinIO（可选）</b>内网 S3 兼容对象存储 · FileStorage:Provider=minio 切换 · 数据不出内网</div>
+        <div class="box b-mid"><b>Redis 7 :6379</b>刷新令牌 · 服务心跳 · 分布式缓存</div>
+        <div class="box b-mid"><b>RabbitMQ :5672（可选，默认内存队列）</b>消息持久化 · 断线重连 · 多实例投递 · 管理台 :15672</div>
+        <div class="box b-mid"><b>Nacos :8848（可选）</b>服务注册发现 · 配置中心</div>
+        <div class="box b-mid"><b>Elasticsearch :9200（可选）</b>分布式日志存储 · Kibana :5601 检索</div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-title">⑤ 可观测性</div>
+      <div class="row">
+        <div class="box b-obs"><b>链路追踪</b>网关生成 TraceId → HTTP 头透传 → 各服务日志携带</div>
+        <div class="box b-obs"><b>日志双写</b>Serilog → 本地文件（logs/）+ ES（可选）</div>
+        <div class="box b-obs"><b>服务监控中心</b>页面可视化：健康状态 · 实例数 · 最近检查时间</div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-title">⑥ 部署形态</div>
+      <div class="row">
+        <div class="box b-deploy"><b>本地开发</b>dotnet run × 3 + npm run dev，中间件本机自装</div>
+        <div class="box b-deploy"><b>Docker Compose 单机</b>一键起 MySQL/Redis/Nacos/ES/网关/服务/前端</div>
+        <div class="box b-deploy"><b>K8s / Jenkins / GitHub Actions</b>镜像化部署 · 滚动更新 · CI/CD</div>
+      </div>
+    </div>
+
+  </div>
+
+  <p style="text-align:center;color:#8492a6;font-size:12px;margin-top:24px;">
+    端口约定：网关 5000 · 权限服务 5001 · 任务服务 5002 · 前端开发 5173 ｜ 浏览器直接打开本文件查看
+  </p>
+</body>
+</html>

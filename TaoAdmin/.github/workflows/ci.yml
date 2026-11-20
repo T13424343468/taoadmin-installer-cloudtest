@@ -1,0 +1,99 @@
+name: TaoAdmin CI
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: ci_root_pw
+          MARIADB_DATABASE: taoadmin_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build (0W/0E)
+        working-directory: backend
+        run: dotnet build TaoAdmin.sln -c Release --warnaserror -v m
+      - name: Test
+        working-directory: backend
+        run: dotnet test TaoAdmin.sln -c Release --no-build --logger "console;verbosity=normal"
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install & build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Unit tests
+        working-directory: frontend
+        run: npx vitest run
+
+  real-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real services (MariaDB + Redis)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server redis-server
+          sudo service mariadb start
+          sudo service redis-server start
+          sudo mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('Micro@2026') OR unix_socket; FLUSH PRIVILEGES;"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Init database (root socket)
+        run: |
+          sudo mariadb < deploy/sql/tao_admin_init.sql
+          touch /var/tmp/taoadmin-deploy.state
+          echo "数据库初始化" >> /var/tmp/taoadmin-deploy.state
+      - name: Verify publish output
+        run: |
+          ls -la deploy/publish/backend/identity/ | grep -iE "sugar" || echo "no sugar dll"
+          grep -o "SqlSugar[^,]*" deploy/publish/backend/identity/TaoAdmin.IdentityService.deps.json | sort -u | head
+      - name: One-click deploy on real machine
+        run: bash deploy/oneclick/deploy.sh --force
+      - name: Dump deploy log on failure
+        if: failure()
+        run: |
+          tail -40 /var/tmp/taoadmin-deploy.log || true
+          for f in deploy/run/*.log; do echo "===== $f ====="; tail -30 "$f" 2>/dev/null; done
+      - name: Smoke (health + real login)
+        run: |
+          sleep 5
+          curl -sf http://127.0.0.1:5001/health || (echo Identity-unhealthy; sudo tail -40 deploy/run/Identity.log; exit 1)
+          curl -sf http://127.0.0.1:5000/health || (echo Gateway-unhealthy; sudo tail -40 deploy/run/Gateway.log; exit 1)
+          CODE=$(curl -s -o /tmp/login.json -w '%{http_code}' -X POST http://127.0.0.1:5000/api/identity/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin@123"}')
+          echo "login_http=$CODE"; head -c 300 /tmp/login.json
+          test "$CODE" = 200

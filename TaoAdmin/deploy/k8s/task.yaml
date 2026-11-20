@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task
+  namespace: taoadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: task }
+  template:
+    metadata:
+      labels: { app: task }
+    spec:
+      containers:
+        - name: task
+          image: registry.example.com/taoadmin/task:latest
+          ports: [{ containerPort: 5002 }]
+          envFrom:
+            - configMapRef: { name: taoadmin-config }
+            - secretRef: { name: taoadmin-secret }
+          readinessProbe:
+            httpGet: { path: /health, port: 5002 }
+            initialDelaySeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: task
+  namespace: taoadmin
+spec:
+  selector: { app: task }
+  ports: [{ port: 5002, targetPort: 5002 }]

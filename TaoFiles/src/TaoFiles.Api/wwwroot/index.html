@@ -1,0 +1,165 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文件中心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #1f2d3d; padding: 24px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #8492a6; font-size: 13px; margin-bottom: 16px; }
+  .bar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  input, button { font-size: 14px; padding: 8px 12px; border-radius: 6px; border: 1px solid #dcdfe6; outline: none; }
+  input { width: 220px; }
+  button { background: #1677ff; color: #fff; border: none; cursor: pointer; }
+  button.ghost { background: #fff; color: #1f2d3d; border: 1px solid #dcdfe6; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #f0f2f5; word-break: break-all; }
+  th { background: #fafafa; color: #5a6a7e; }
+  .thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #f0f2f5; display: block; }
+  .ext-badge { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: #f0f5ff; color: #1677ff; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .copy { color: #1677ff; cursor: pointer; margin-right: 8px; }
+  .del { color: #e5484d; cursor: pointer; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: #5a6a7e; }
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1f2d3d; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: .92; }
+  .size { color: #8492a6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>文件中心</h1>
+  <div class="sub">上传后把「相对路径」存进业务系统即可；相同文件重复上传自动复用，不占额外空间</div>
+
+  <div class="bar">
+    <button id="pickBtn">＋ 上传文件</button>
+    <input type="file" id="fileInput" hidden multiple>
+    <input type="text" id="keyword" placeholder="按文件名搜索">
+    <button class="ghost" id="searchBtn">搜索</button>
+    <span class="size" id="stat"></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th style="width:52px">预览</th><th>文件名</th><th style="width:230px">相对路径</th><th style="width:90px">大小</th><th style="width:150px">上传时间</th><th style="width:110px">操作</th></tr>
+    </thead>
+    <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#8492a6">加载中…</td></tr></tbody>
+  </table>
+
+  <div class="pager">
+    <span id="pageTotal"></span>
+    <select id="sizeSel" title="每页条数">
+      <option value="10">10 条/页</option>
+      <option value="20">20 条/页</option>
+      <option value="50">50 条/页</option>
+      <option value="100">100 条/页</option>
+    </select>
+    <button class="ghost" id="firstBtn" title="第一页">«</button>
+    <button class="ghost" id="prevBtn">上一页</button>
+    <span>第 <input type="number" id="jumpInput" min="1" style="width:52px;text-align:center"> / <span id="pageCount"></span> 页</span>
+    <button class="ghost" id="nextBtn">下一页</button>
+    <button class="ghost" id="lastBtn" title="最后一页">»</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="text" id="clip" style="position:fixed;left:-9999px">
+
+<script>
+let PAGE_SIZE = 10;
+let page = 1, total = 0, keyword = '';
+
+const pageCount = () => Math.max(Math.ceil(total / PAGE_SIZE), 1);
+const clampPage = p => Math.min(Math.max(p, 1), pageCount());
+
+const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(1) + ' MB';
+const fmtTime = s => new Date(s).toLocaleString('zh-CN', { hour12: false });
+const ext = name => { const i = name.lastIndexOf('.'); return i < 0 ? '文件' : name.slice(i+1, i+5).toUpperCase(); };
+const isImg = name => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name);
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+async function load() {
+  const res = await fetch(`/api/files?pageIndex=${page}&pageSize=${PAGE_SIZE}&keyword=${encodeURIComponent(keyword)}`);
+  const { data } = await res.json();
+  total = data.total;
+  page = clampPage(page);
+  document.getElementById('stat').textContent = `共 ${total} 个文件`;
+  document.getElementById('pageTotal').textContent = `共 ${total} 条`;
+  document.getElementById('pageCount').textContent = pageCount();
+  document.getElementById('jumpInput').value = page;
+  document.getElementById('jumpInput').max = pageCount();
+  document.getElementById('firstBtn').disabled = page <= 1;
+  document.getElementById('prevBtn').disabled = page <= 1;
+  document.getElementById('nextBtn').disabled = page >= pageCount();
+  document.getElementById('lastBtn').disabled = page >= pageCount();
+
+  const tbody = document.getElementById('tbody');
+  if (!data.list.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8492a6">暂无文件，点上方「上传文件」试试</td></tr>'; return; }
+  tbody.innerHTML = data.list.map(f => `
+    <tr>
+      <td>${isImg(f.fileName) ? `<img class="thumb" src="${f.fileUrl}" loading="lazy">` : `<span class="ext-badge">${ext(f.fileName)}</span>`}</td>
+      <td>${f.fileName}<br><span class="size">${f.md5.slice(0,8)}… · ${f.source || '手动上传'}</span></td>
+      <td><span class="copy" onclick="copyPath('${f.fileUrl}')" title="点击复制相对路径">${f.fileUrl}</span></td>
+      <td>${fmtSize(f.size)}</td>
+      <td>${fmtTime(f.createdAt)}</td>
+      <td><a href="${f.fileUrl}" target="_blank" style="color:#1677ff;margin-right:8px">打开</a><span class="del" onclick="del('${f.id}')">删除</span></td>
+    </tr>`).join('');
+}
+
+function gotoPage(p) { page = clampPage(p || 1); load(); }
+document.getElementById('firstBtn').onclick = () => gotoPage(1);
+document.getElementById('prevBtn').onclick = () => gotoPage(page - 1);
+document.getElementById('nextBtn').onclick = () => gotoPage(page + 1);
+document.getElementById('lastBtn').onclick = () => gotoPage(pageCount());
+document.getElementById('jumpInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') gotoPage(parseInt(e.target.value, 10));
+});
+document.getElementById('sizeSel').addEventListener('change', e => {
+  PAGE_SIZE = parseInt(e.target.value, 10);
+  page = 1; load();
+});
+
+async function upload(files) {
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append('file', f); fd.append('uploadBy', '管理员'); fd.append('source', 'web');
+    const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
+    const { code, msg, data } = await res.json();
+    if (code !== 200) { toast('「' + f.name + '」上传失败：' + msg); continue; }
+    toast(data.reused ? `「${f.name}」已存在，直接复用（秒传）` : `「${f.name}」上传成功`);
+  }
+  load();
+}
+
+async function del(id) {
+  if (!confirm('确定删除该文件吗？')) return;
+  await fetch(`/api/files/${id}?physicalDelete=false`, { method: 'DELETE' });
+  toast('已删除'); load();
+}
+
+function copyPath(p) {
+  const c = document.getElementById('clip');
+  c.value = p; c.select();
+  navigator.clipboard ? navigator.clipboard.writeText(p) : document.execCommand('copy');
+  toast('相对路径已复制，业务系统存这个就行');
+}
+
+document.getElementById('pickBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = e => { upload([...e.target.files]); e.target.value = ''; };
+document.getElementById('searchBtn').onclick = () => { keyword = document.getElementById('keyword').value.trim(); page = 1; load(); };
+document.getElementById('keyword').onkeydown = e => { if (e.key === 'Enter') document.getElementById('searchBtn').click(); };
+document.getElementById('prevBtn').onclick = () => { if (page > 1) { page--; load(); } };
+document.getElementById('nextBtn').onclick = () => { if (page < Math.ceil(total/PAGE_SIZE)) { page++; load(); } };
+
+load();
+</script>
+</body>
+</html>

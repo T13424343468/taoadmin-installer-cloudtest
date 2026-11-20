@@ -1,0 +1,82 @@
+// Jenkins 多阶段流水线：构建 -> 测试 -> 镜像 -> 部署
+// 凭据要求：Jenkins 中配置 docker-registry（用户名密码）、deploy-host（SSH 私钥）
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: "v-${new Date().format('yyyyMMdd-HHmmss')}", description: '镜像标签')
+        choice(name: 'DEPLOY_ENV', choices: ['dev', 'prod'], description: '部署环境')
+    }
+
+    environment {
+        REGISTRY   = 'registry.example.com'      // TODO: 替换为私有镜像仓库地址
+        NAMESPACE  = 'taoadmin'
+        APP_DIR    = '/opt/taoadmin'           // 目标机 compose 目录
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Backend Build & Test') {
+            steps {
+                dir('backend') {
+                    sh 'dotnet restore'
+                    sh 'dotnet build -c Release --no-restore'
+                    sh 'dotnet test tests/TaoAdmin.Tests -c Release --no-build'
+                    sh 'dotnet publish src/TaoAdmin.GatewayService -c Release -o publish/gateway'
+                    sh 'dotnet publish src/TaoAdmin.IdentityService -c Release -o publish/identity'
+                    sh 'dotnet publish src/TaoAdmin.TaskService -c Release -o publish/task'
+                }
+            }
+        }
+
+        stage('Frontend Build') {
+            steps {
+                dir('frontend') {
+                    sh 'npm ci --registry=https://registry.npmmirror.com'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            parallel {
+                stage('gateway')    { steps { image('TaoAdmin.GatewayService', 'gateway', 'src/TaoAdmin.GatewayService') } }
+                stage('identity')   { steps { image('TaoAdmin.IdentityService', 'identity', 'src/TaoAdmin.IdentityService') } }
+                stage('task')       { steps { image('TaoAdmin.TaskService', 'task', 'src/TaoAdmin.TaskService') } }
+                stage('frontend')   { steps { image('frontend', 'frontend', '../frontend') } }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sshagent(credentials: ['deploy-host']) {
+                    sh """
+ssh -o StrictHostKeyChecking=no root@deploy-host "
+  cd ${APP_DIR} && \\
+  export IMAGE_TAG=${params.IMAGE_TAG} && \\
+  docker compose pull && \\
+  docker compose up -d --remove-orphans && \\
+  docker image prune -f
+"
+"""
+                }
+            }
+        }
+    }
+
+    post {
+        failure { echo '构建失败，请检查日志（此处可接入钉钉/企微/邮件通知 Webhook）' }
+        success { echo "部署完成：${params.DEPLOY_ENV} @ ${params.IMAGE_TAG}" }
+    }
+}
+
+// 镜像构建辅助（在 frontend 场景 context 传相对路径）
+def image(String dockerfilePath, String name, String context) {
+    sh """
+docker build -f ${dockerfilePath}/Dockerfile -t ${REGISTRY}/${NAMESPACE}/${name}:${params.IMAGE_TAG} ${context}
+docker push ${REGISTRY}/${NAMESPACE}/${name}:${params.IMAGE_TAG}
+"""
+}

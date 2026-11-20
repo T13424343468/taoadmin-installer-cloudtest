@@ -1,0 +1,168 @@
+﻿using System.Security.Cryptography;
+using TaoFiles.Api.Entities;
+using TaoFiles.Api.Storage;
+using SqlSugar;
+
+namespace TaoFiles.Api.Controllers;
+
+// ============ DTO ============
+public class UploadResult
+{
+    /// <summary>文件 ID</summary>
+    public string id { get; set; } = "";
+    /// <summary>原文件名</summary>
+    public string fileName { get; set; } = "";
+    /// <summary>相对路径（业务系统保存这个）</summary>
+    public string fileUrl { get; set; } = "";
+    /// <summary>大小（字节）</summary>
+    public long size { get; set; }
+    /// <summary>MD5</summary>
+    public string md5 { get; set; } = "";
+    /// <summary>是否命中复用（true = 秒传，未产生新文件）</summary>
+    public bool reused { get; set; }
+}
+
+public class FileDto
+{
+    public string id { get; set; } = "";
+    public string fileName { get; set; } = "";
+    public string fileUrl { get; set; } = "";
+    public long size { get; set; }
+    public string? contentType { get; set; }
+    public string md5 { get; set; } = "";
+    public string? uploadBy { get; set; }
+    public string? source { get; set; }
+    public DateTime createdAt { get; set; }
+}
+
+public class PageOf<T>
+{
+    public int total { get; set; }
+    public List<T> list { get; set; } = new();
+}
+
+/// <summary>
+/// 文件应用服务：上传（MD5 去重/秒传）、分页列表、删除。
+/// 同一个文件反复上传只保留一份物理文件与一条记录——这正是「可反复使用」的核心。
+/// </summary>
+public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IConfiguration config)
+{
+    private string[] AllowedExt => (config["FileStorage:AllowedExtensions"]
+        ?? ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.mp3,.mp4,.txt,.md,.csv")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private long MaxSizeBytes => (long)(config.GetValue("FileStorage:MaxSizeMB", 50)) * 1024 * 1024;
+
+    /// <summary>上传：校验扩展名白名单与大小限制 → MD5 去重 → 落盘 → 登记记录</summary>
+    public async Task<UploadResult> UploadAsync(IFormFile file, string? uploadBy, string? source)
+    {
+        if (file is null || file.Length == 0) throw new DomainException("请选择要上传的文件", 400);
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!AllowedExt.Contains(ext)) throw new DomainException($"不支持的文件类型：{ext}", 400);
+        if (file.Length > MaxSizeBytes) throw new DomainException($"文件超过大小限制（{MaxSizeBytes / 1024 / 1024}MB）", 400);
+
+        await using var stream = file.OpenReadStream();
+
+        // 计算 MD5 用于去重
+        string md5;
+        using (var md5Hash = MD5.Create())
+            md5 = Convert.ToHexString(md5Hash.ComputeHash(stream)).ToLowerInvariant();
+        stream.Position = 0;
+
+        var existing = await db.Queryable<SysFile>()
+            .FirstAsync(f => f.Md5 == md5 && f.IsDeleted == false);
+        if (existing != null)
+        {
+            // 命中复用：物理文件与记录都不新建（秒传）
+            return new UploadResult
+            {
+                id = existing.Id.ToString(), fileName = existing.FileName, fileUrl = existing.FileUrl,
+                size = existing.Size, md5 = existing.Md5, reused = true
+            };
+        }
+
+        var relativePath = await storage.SaveAsync(stream, file.FileName);
+        var entity = new SysFile
+        {
+            Id = Snowflake.NextId(),
+            FileName = file.FileName,
+            FileUrl = relativePath,
+            Size = file.Length,
+            ContentType = file.ContentType,
+            Md5 = md5,
+            UploadBy = uploadBy,
+            Source = source
+        };
+        await db.Insertable(entity).ExecuteCommandAsync();
+
+        return new UploadResult
+        {
+            id = entity.Id.ToString(), fileName = entity.FileName, fileUrl = entity.FileUrl,
+            size = entity.Size, md5 = entity.Md5, reused = false
+        };
+    }
+
+    /// <summary>分页列表（按文件名/来源筛选）</summary>
+    public async Task<PageOf<FileDto>> PageAsync(int pageIndex, int pageSize, string? keyword, string? source)
+    {
+        RefAsync<int> total = 0;
+        var list = await db.Queryable<SysFile>()
+            .Where(f => f.IsDeleted == false)
+            .WhereIF(!string.IsNullOrWhiteSpace(keyword), f => f.FileName.Contains(keyword!))
+            .WhereIF(!string.IsNullOrWhiteSpace(source), f => f.Source == source)
+            .OrderBy(f => f.CreatedAt, OrderByType.Desc)
+            .ToPageListAsync(pageIndex, pageSize, total);
+        return new PageOf<FileDto>
+        {
+            total = total,
+            list = list.Select(f => new FileDto
+            {
+                id = f.Id.ToString(), fileName = f.FileName, fileUrl = f.FileUrl, size = f.Size,
+                contentType = f.ContentType, md5 = f.Md5, uploadBy = f.UploadBy,
+                source = f.Source, createdAt = f.CreatedAt
+            }).ToList()
+        };
+    }
+
+    /// <summary>删除（软删；physicalDelete=true 时同时清理磁盘文件）</summary>
+    public async Task DeleteAsync(string id, bool physicalDelete)
+    {
+        var fid = long.Parse(id);
+        var entity = await db.Queryable<SysFile>().FirstAsync(f => f.Id == fid && f.IsDeleted == false)
+            ?? throw new DomainException("文件不存在", 404);
+        entity.IsDeleted = true;
+        await db.Updateable(entity).ExecuteCommandAsync();
+        if (physicalDelete) await storage.DeleteAsync(entity.FileUrl);
+    }
+}
+
+/// <summary>业务异常（统一返回给调用方）</summary>
+public class DomainException(string message, int code = 400) : Exception(message)
+{
+    public int Code { get; } = code;
+}
+
+/// <summary>简易雪花 ID 生成器（单实例足够；多实例可用起始时间戳+机器号扩展）</summary>
+public static class Snowflake
+{
+    private static long _lastTs = -1L, _seq;
+    private static readonly object Lock = new();
+    private const long Epoch = 638000000000000000L; // 自定义纪元，保证足够长期唯一
+
+    public static long NextId()
+    {
+        lock (Lock)
+        {
+            var ts = DateTime.UtcNow.Ticks - Epoch;
+            if (ts == _lastTs)
+            {
+                _seq = (_seq + 1) & 0xFFF;
+                if (_seq == 0) { while (ts <= _lastTs) ts = DateTime.UtcNow.Ticks - Epoch; }
+            }
+            else _seq = 0;
+            _lastTs = ts;
+            return (ts << 12) | _seq;
+        }
+    }
+}

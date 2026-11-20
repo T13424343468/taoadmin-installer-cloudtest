@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Product>TaoAdmin.Utilities</Product>
+    <Company>Tao</Company>
+    <Authors>Tao</Authors>
+    <Copyright>Copyright (c) 2026 Tao</Copyright>
+    <Version>1.0.0</Version>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>TaoAdmin 公用工具库：字符串/日期/加密/JSON/HTTP/校验等常用工具类，及 HttpClient 二次封装</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+  </ItemGroup>
+
+</Project>

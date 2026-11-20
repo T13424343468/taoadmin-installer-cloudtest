@@ -1,0 +1,13 @@
+bin/
+obj/
+node_modules/
+dist/
+*.user
+.vs/
+.bash-outputs/
+.zero_vacuum/
+test-avatar.png
+deploy/publish/
+deploy/run/
+deploy/backups/
+deploy/ops/

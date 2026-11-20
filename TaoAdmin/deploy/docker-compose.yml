@@ -1,0 +1,186 @@
+﻿version: "3.8"
+
+# TaoAdmin 一键编排：先起基础设施（MySQL/Redis/Nacos/ES/Kibana），再起应用服务
+# 使用：docker compose up -d
+# 建议先在 Nacos 控制台导入各服务配置（见 nacos/README.md）
+
+services:
+  # ---------- 基础设施 ----------
+  mysql:
+    image: mysql:8.0
+    container_name: taoadmin-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Micro@2026}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-Micro@2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: taoadmin-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- 消息队列（线上启用 RabbitMq:Enabled=true 时使用） ----------
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: taoadmin-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: taoadmin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-Rabbit@2026}
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # 管理控制台 http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    container_name: taoadmin-nacos
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: embedded
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  elasticsearch:
+    image: elasticsearch:8.8.2
+    container_name: taoadmin-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  kibana:
+    image: kibana:8.8.2
+    container_name: taoadmin-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ---------- 应用服务 ----------
+  gateway:
+    build:
+      context: ../backend
+      dockerfile: src/TaoAdmin.GatewayService/Dockerfile
+    container_name: taoadmin-gateway
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - NACOS_HOST=nacos
+      - REDIS_CONN=redis:6379
+    ports:
+      - "5000:5000"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  identity:
+    build:
+      context: ../backend
+      dockerfile: src/TaoAdmin.IdentityService/Dockerfile
+    container_name: taoadmin-identity
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5001
+      - MYSQL_CONN=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;
+      - REDIS_CONN=redis:6379
+      - NACOS_HOST=nacos
+      - ES_URL=http://elasticsearch:9200
+      # 消息队列：容器内默认走 RabbitMQ（本地直跑用内存队列，见 appsettings）
+      - RabbitMq__Enabled=true
+      - RabbitMq__HostName=rabbitmq
+      - RabbitMq__UserName=taoadmin
+      - RabbitMq__Password=${RABBITMQ_PASSWORD:-Rabbit@2026}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  task:
+    build:
+      context: ../backend
+      dockerfile: src/TaoAdmin.TaskService/Dockerfile
+    container_name: taoadmin-task
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5002
+      - MYSQL_CONN=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;
+      - REDIS_CONN=redis:6379
+      - NACOS_HOST=nacos
+      - ES_URL=http://elasticsearch:9200
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: taoadmin-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - gateway
+
+volumes:
+  mysql-data:
+  redis-data:
+  es-data:
+  rabbitmq-data:

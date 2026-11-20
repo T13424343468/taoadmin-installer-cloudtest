@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore & Build
+        run: |
+          dotnet restore backend
+          dotnet build backend -c Release --no-restore
+      - name: Test
+        run: dotnet test backend/tests/TaoAdmin.Tests -c Release --no-build
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build
+        working-directory: frontend
+        run: |
+          npm ci --registry=https://registry.npmmirror.com
+          npm run build
+
+  docker:
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: gateway
+            dockerfile: src/TaoAdmin.GatewayService/Dockerfile
+          - name: identity
+            dockerfile: src/TaoAdmin.IdentityService/Dockerfile
+          - name: task
+            dockerfile: src/TaoAdmin.TaskService/Dockerfile
+          - name: frontend
+            dockerfile: Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.name == 'frontend' && 'frontend' || 'backend' }}
+          file: ${{ matrix.name == 'frontend' && 'frontend/Dockerfile' || format('backend/{0}', matrix.dockerfile) }}
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}:${{ github.sha }}
