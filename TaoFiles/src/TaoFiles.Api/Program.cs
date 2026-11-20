@@ -84,10 +84,12 @@ if (!string.IsNullOrEmpty(apiKey))
 app.UseDefaultFiles();   // / 指向管理页面
 app.UseStaticFiles();
 // /uploads/** 映射到存储根目录：相对路径 + 域名即可直接访问文件
+// 存储根目录不存在时先创建（首次部署/全新发布目录下 PhysicalFileProvider 会抛 DirectoryNotFoundException）
+var uploadsRoot = Path.GetFullPath(app.Configuration["FileStorage:Root"] ?? "uploads");
+Directory.CreateDirectory(uploadsRoot);
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
-        Path.GetFullPath(app.Configuration["FileStorage:Root"] ?? "uploads")),
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsRoot),
     RequestPath = "/uploads",
     ServeUnknownFileTypes = true
 });

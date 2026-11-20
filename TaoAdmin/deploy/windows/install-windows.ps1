@@ -372,6 +372,8 @@ function Initialize-Database {
 function Start-Services {
   if ($DryRun) { Write-Host '  [DryRun] 将拉起 identity/gateway/task/taofiles/前端服务'; return }
   New-Item -ItemType Directory -Force -Path $PidDir, $LogDir | Out-Null
+  # 兜底：文件中心存储根目录必须存在，否则 PhysicalFileProvider 启动即抛 DirectoryNotFoundException
+  New-Item -ItemType Directory -Force -Path (Join-Path $PublishDir 'backend\taofiles\uploads') | Out-Null
   $env:PATH = "$(Join-Path $RuntimeDir 'dotnet10');$(Join-Path $RuntimeDir 'node20');$env:PATH"
   $env:DOTNET_ROOT = Join-Path $RuntimeDir 'dotnet10'
   $svcs = @(
