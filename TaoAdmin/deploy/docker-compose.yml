@@ -61,7 +61,8 @@ services:
     container_name: taoadmin-nacos
     environment:
       MODE: standalone
-      SPRING_DATASOURCE_PLATFORM: embedded
+      # 不显式设 SPRING_DATASOURCE_PLATFORM：2.2.3 的 MapperManager 不认 "embedded" 值（errCode 102），
+      # standalone 默认即内嵌 derby 存储
       JVM_XMS: 256m
       JVM_XMX: 512m
     ports:
