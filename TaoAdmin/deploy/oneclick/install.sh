@@ -139,26 +139,39 @@ ensure_mysql() {
     sudo apt-get update -y >> /var/tmp/taoadmin-apt.log 2>&1
     sudo apt-get install -y mariadb-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "mariadb 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
   fi
+  # 服务端二进制检测：PATH 或 /usr/sbin 下找 mariadbd/mysqld
+  local server_bin=""
+  for c in mariadbd mysqld; do
+    if have "$c" || [[ -x "/usr/sbin/$c" ]]; then server_bin="$c"; break; fi
+  done
   sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
   local ready=0
   for i in $(seq 1 15); do
     if db_admin -e "SELECT 1" >/dev/null 2>&1; then ready=1; break; fi
-    # 服务可能未注册：第 3 轮起尝试直接拉起服务端进程
-    if [[ $i -eq 3 ]]; then
-      if have mariadbd; then sudo mariadbd --user=mysql --daemonize 2>/dev/null || true
-      elif have mysqld; then sudo mysqld --user=mysql --daemonize 2>/dev/null || true
+    # 服务未注册/未起：第 5 轮起初始化数据目录（如未初始化）并直接拉起服务端
+    if [[ $i -eq 5 && -n "$server_bin" ]]; then
+      if ! ls /var/lib/mysql/mysql >/dev/null 2>&1; then
+        log "初始化数据库数据目录……"
+        if have mariadb-install-db; then
+          sudo mariadb-install-db --user=mysql --datadir=/var/lib/mysql >> /var/tmp/taoadmin-apt.log 2>&1 || true
+        else
+          sudo "$server_bin" --initialize-insecure --user=mysql --datadir=/var/lib/mysql >> /var/tmp/taoadmin-apt.log 2>&1 || true
+        fi
       fi
+      local sb="/usr/sbin/$server_bin"
+      [[ -x "$sb" ]] || sb="$server_bin"
+      sudo "$sb" --user=mysql --daemonize >> /var/tmp/taoadmin-apt.log 2>&1 || true
     fi
     sleep 2
   done
   if [[ $ready != 1 ]]; then
-    if ! have mysqld && ! have mariadbd && ! ls /usr/sbin/mysqld /usr/sbin/mariadbd /var/lib/mysql 2>/dev/null; then
-      log "仅有数据库客户端，补装服务端（mariadb-server）……"
+    if [[ -z "$server_bin" ]]; then
+      log "未检测到数据库服务端，补装（mariadb-server）……"
       sudo apt-get install -y mariadb-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "mariadb-server 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
       sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
       for i in $(seq 1 15); do db_admin -e "SELECT 1" >/dev/null 2>&1 && { ready=1; break; }; sleep 2; done
     fi
-    [[ $ready == 1 ]] || fail "数据库服务未就绪（socket/TCP 均无法连接）"
+    [[ $ready == 1 ]] || fail "数据库服务未就绪（socket/TCP 均无法连接，详见 /var/tmp/taoadmin-apt.log）"
   fi
   # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
   if ! db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
