@@ -191,12 +191,31 @@ function Install-DockerDesktop {
     if ($osType -ne 'linux') {
       Write-Log "Docker 当前为 $osType 容器模式，切换为 Linux 容器模式……"
       $dockerCli = 'C:\Program Files\Docker\Docker\DockerCli.exe'
+      $switched = $false
       if (Test-Path $dockerCli) {
-        & $dockerCli -SwitchDaemon | Out-Null
-        Start-Sleep -Seconds 3
+        for ($s = 1; $s -le 4 -and -not $switched; $s++) {
+          Write-Log "切换尝试 $s……"
+          & $dockerCli -SwitchDaemon 2>&1 | ForEach-Object { Write-Host $_ }
+          for ($w = 0; $w -lt 10; $w++) {
+            Start-Sleep -Seconds 6
+            $t = docker info --format '{{.OSType}}' 2>$null
+            if ($t -eq 'linux') { $switched = $true; break }
+          }
+          if ($switched) { break }
+          if ($s -eq 2) {
+            Write-Log '切换未生效，重启 Docker Desktop 后再试……'
+            Stop-Process -Name 'Docker Desktop' -Force -ErrorAction SilentlyContinue
+            Stop-Process -Name 'com.docker.backend' -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+            Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+            Start-Sleep -Seconds 20
+          }
+        }
       }
-      $osType = docker info --format '{{.OSType}}' 2>$null
-      if ($osType -ne 'linux') { throw "Docker 容器模式切换失败（当前 OSType=$osType），无法拉起 Linux 镜像" }
+      if (-not $switched) {
+        $osType = docker info --format '{{.OSType}}' 2>$null
+        throw "Docker 容器模式切换失败（当前 OSType=$osType），无法拉起 Linux 镜像"
+      }
       Write-Log '已切换为 Linux 容器模式'
     }
   }

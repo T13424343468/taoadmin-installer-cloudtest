@@ -59,6 +59,11 @@ jobs:
             try { cmd /c "$($u.UninstallString) /S" 2>$null } catch {}
           }
           Start-Sleep -Seconds 15
+          # 1.5) 停掉预装 docker 服务，避免旧引擎干扰新装 Docker Desktop 的引擎切换
+          Get-Service | Where-Object { $_.Name -like '*docker*' } | ForEach-Object {
+            Write-Host "stopping service $($_.Name)"
+            Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
+          }
           # 2) 仍存在则掩蔽：runner 把 docker.exe 直接放在 system32，PATH 掩蔽藏不住，
           #    挪走 CLI（dockerd 若被服务占用则跳过），让安装器真实走自动安装分支
           if (Get-Command docker -ErrorAction SilentlyContinue) {
