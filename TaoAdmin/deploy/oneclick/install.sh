@@ -150,6 +150,11 @@ ensure_mysql() {
     if db_admin -e "SELECT 1" >/dev/null 2>&1; then ready=1; break; fi
     # 服务未注册/未起：第 5 轮起初始化数据目录（如未初始化）并直接拉起服务端
     if [[ $i -eq 5 && -n "$server_bin" ]]; then
+      if [[ -d /var/lib/mysql ]] && ! ls /var/lib/mysql/mysql >/dev/null 2>&1; then
+        # 数据目录存在但未初始化（预装残留）：挪开残留后全新初始化
+        log "数据目录存在但未初始化，挪开残留目录后重新初始化……"
+        sudo mv /var/lib/mysql "/var/lib/mysql.residual.$(date +%s)" 2>/dev/null || sudo rm -rf /var/lib/mysql
+      fi
       if ! ls /var/lib/mysql/mysql >/dev/null 2>&1; then
         log "初始化数据库数据目录……"
         if have mariadb-install-db; then
@@ -171,7 +176,13 @@ ensure_mysql() {
       sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
       for i in $(seq 1 15); do db_admin -e "SELECT 1" >/dev/null 2>&1 && { ready=1; break; }; sleep 2; done
     fi
-    [[ $ready == 1 ]] || fail "数据库服务未就绪（socket/TCP 均无法连接，详见 /var/tmp/taoadmin-apt.log）"
+    if [[ $ready != 1 ]]; then
+      # 诊断信息进主日志，便于定位（不改动用户环境）
+      log "数据库启动失败诊断：已安装包 -> $(dpkg -l 2>/dev/null | grep -iE 'mysql|mariadb' | awk '{print $2"="$3}' | tr '\n' ' ')"
+      log "数据目录 -> $(ls -la /var/lib/mysql 2>/dev/null | head -8 | tr '\n' ' ')"
+      log "错误日志尾部 -> $(tail -20 /var/log/mysql/error.log /var/lib/mysql/*.err 2>/dev/null | tr '\n' ' ')"
+      fail "数据库服务未就绪（socket/TCP 均无法连接，详见 /var/tmp/taoadmin-apt.log）"
+    fi
   fi
   # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
   if ! db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then

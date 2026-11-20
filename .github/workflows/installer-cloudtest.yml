@@ -132,6 +132,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Purge preinstalled databases (exercise real fresh-install path)
+        run: |
+          sudo apt-get purge -y 'mysql-server*' 'mysql-client*' 'mariadb-server*' 'mariadb-client*' 2>/dev/null || true
+          sudo rm -rf /var/lib/mysql /var/log/mysql
+          echo "purged; remaining:"; dpkg -l 2>/dev/null | grep -iE 'mysql|mariadb' || echo "  none"
       - name: Run installer (Linux native, real run)
         run: |
           cd TaoAdmin/deploy/oneclick
