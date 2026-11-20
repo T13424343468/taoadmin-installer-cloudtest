@@ -5,7 +5,8 @@ WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 缓存
 COPY package.json ./
-RUN npm install --registry=https://registry.npmmirror.com
+# npmmirror 偶发 arborist edgesOut 空引用（npm 已知 bug），失败时清缓存回退官方源
+RUN npm install --registry=https://registry.npmmirror.com || (npm cache clean -f && npm install)
 
 # 复制源码并构建
 COPY . .
