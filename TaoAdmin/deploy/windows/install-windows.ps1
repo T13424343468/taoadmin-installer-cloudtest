@@ -339,7 +339,16 @@ function Build-Frontend {
     & npm install --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw 'npm install 失败' }
     & npm run build
-    if ($LASTEXITCODE -ne 0) { throw '前端构建失败' }
+    if ($LASTEXITCODE -ne 0) {
+      # npm 可选依赖缺陷（npm/cli#4828）：原生绑定可能漏装，按官方口径清缓存重装重试一次
+      Write-Log '前端构建首次失败，按 npm 官方口径清理 node_modules 与 lock 后重装重试……'
+      Remove-Item (Join-Path $feDir 'node_modules') -Recurse -Force -ErrorAction SilentlyContinue
+      Remove-Item (Join-Path $feDir 'package-lock.json') -Force -ErrorAction SilentlyContinue
+      & npm install --no-audit --no-fund
+      if ($LASTEXITCODE -ne 0) { throw 'npm install 重试失败' }
+      & npm run build
+      if ($LASTEXITCODE -ne 0) { throw '前端构建失败（重试后仍失败）' }
+    }
   } finally { Pop-Location }
   $distIndex = Join-Path $feDir 'dist\index.html'
   if (-not (Test-Path $distIndex)) { throw '前端产物校验失败：dist/index.html 缺失' }
