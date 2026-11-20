@@ -20,7 +20,7 @@ RUN dotnet restore "src/TaoAdmin.IdentityService/TaoAdmin.IdentityService.csproj
 # 复制全部源码并发布
 COPY . .
 WORKDIR /src/src/TaoAdmin.IdentityService
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish
 
 # ---------------- 运行阶段 ----------------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
