@@ -146,7 +146,16 @@ function Install-DockerDesktop {
     Write-Log '通过 winget 安装 Docker Desktop（体积较大，请耐心等待）……'
     if (-not $DryRun) {
       & winget install -e --id Docker.DockerDesktop --silent --accept-package-agreements --accept-source-agreements
-      if ($LASTEXITCODE -ne 0) { throw "winget 安装 Docker Desktop 失败（exit=$LASTEXITCODE）" }
+      if ($LASTEXITCODE -ne 0) {
+        # winget 对"已安装"等场景可能报非零退出码：以 docker CLI 实际可用性为准
+        $dockerBin0 = 'C:\Program Files\Docker\Docker\resources\bin'
+        if (Test-Path $dockerBin0) { $env:PATH = "$dockerBin0;$env:PATH" }
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+          Write-Log "winget 退出码 $LASTEXITCODE，但 docker CLI 实际可用，继续"
+        } else {
+          throw "winget 安装 Docker Desktop 失败（exit=$LASTEXITCODE）"
+        }
+      }
     } else { Write-Host '  [DryRun] 将执行 winget install Docker.DockerDesktop' }
   } else {
     $exe = Join-Path $DlDir 'DockerDesktopInstaller.exe'

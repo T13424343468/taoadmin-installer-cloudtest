@@ -49,14 +49,29 @@ jobs:
       - name: Uninstall Docker Desktop (exercise auto-install branch)
         shell: pwsh
         run: |
-          winget uninstall -e --id Docker.DockerDesktop --silent --accept-source-agreements 2>$null
-          if (Get-Command docker -ErrorAction SilentlyContinue) {
-            Write-Host 'winget uninstall did not remove docker, trying installer uninstaller...'
-            $dd = 'C:\Program Files\Docker\Docker\Docker Desktop Installer.exe'
-            if (Test-Path $dd) { Start-Process -FilePath $dd -ArgumentList 'uninstall','--quiet' -Wait }
+          # 1) 注册表卸载入口：winget 对非 winget 装的包会报 No installed package found
+          $keys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+          $un = Get-ItemProperty $keys -ErrorAction SilentlyContinue |
+                Where-Object { $_.DisplayName -like '*Docker*' -and $_.UninstallString }
+          foreach ($u in $un) {
+            Write-Host "registry uninstall entry: $($u.DisplayName) -> $($u.UninstallString)"
+            try { cmd /c "$($u.UninstallString) /S" 2>$null } catch {}
           }
-          if (Get-Command docker -ErrorAction SilentlyContinue) { throw 'docker still present after uninstall' }
-          Write-Host 'docker removed — installer auto-install branch will be exercised for real'
+          Start-Sleep -Seconds 15
+          # 2) 仍存在则 PATH 掩蔽：从机器与当前 PATH 移除 docker 目录，模拟未安装，
+          #    让安装器真实走自动安装分支（winget 对已装包报非零时脚本按实际可用性容错）
+          if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Write-Host 'docker still present after uninstall attempts — masking PATH to exercise auto-install branch'
+            $machinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
+            $cleaned = ($machinePath -split ';' | Where-Object { $_ -and $_ -notlike '*Docker*' }) -join ';'
+            [Environment]::SetEnvironmentVariable('Path', $cleaned, 'Machine')
+            $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -and $_ -notlike '*Docker*' }) -join ';'
+            if (Get-Command docker -ErrorAction SilentlyContinue) { throw 'docker still reachable after PATH masking' }
+            Write-Host 'docker masked from PATH — installer will exercise auto-install branch'
+          } else {
+            Write-Host 'docker removed — installer auto-install branch will be exercised for real'
+          }
       - name: Run installer (container route, real run)
         shell: pwsh
         run: ./TaoAdmin/deploy/windows/install-windows.ps1 -Action install -Route docker -Force
@@ -76,6 +91,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          $env:PATH = "C:\Program Files\Docker\Docker\resources\bin;$env:PATH"
           cd TaoAdmin/deploy
           docker compose logs --no-color > $env:GITHUB_WORKSPACE\compose-logs.txt 2>&1
           docker ps -a > $env:GITHUB_WORKSPACE\docker-ps.txt 2>&1

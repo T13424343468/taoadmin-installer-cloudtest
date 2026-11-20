@@ -157,25 +157,28 @@ ensure_deps() {
   local missing=()
   dotnet_ok || missing+=("dotnet")
   node_ok   || missing+=("node")
-  { have mysql || have mariadb; } || missing+=("mysql")
-  have redis-server || missing+=("redis")
-  if [[ ${#missing[@]} -eq 0 ]]; then log "依赖齐全，跳过补装"; return; fi
-  log "检测到缺失/不达标依赖: ${missing[*]}"
-  if [[ "${AUTO_DEPS:-0}" != "1" ]]; then
-    read -rp "是否自动补装（需要 sudo，Debian/Ubuntu 用 apt）？(y/N): " ans
-    [[ "$ans" =~ ^[Yy] ]] || fail "请手动安装缺失依赖后重跑本脚本（自动续跑）"
+  # MySQL/Redis 不做"已安装即跳过"：预装实例可能未设口令/未启动，
+  # 无条件走幂等就绪校验（统一 root 口令、拉起服务），保证与应用配置一致
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log "检测到缺失/不达标依赖: ${missing[*]}"
+    if [[ "${AUTO_DEPS:-0}" != "1" ]]; then
+      read -rp "是否自动补装（需要 sudo，Debian/Ubuntu 用 apt）？(y/N): " ans
+      [[ "$ans" =~ ^[Yy] ]] || fail "请手动安装缺失依赖后重跑本脚本（自动续跑）"
+    fi
+    if ! have apt-get; then
+      fail "非 apt 系发行版，请手动安装: ${missing[*]}"
+    fi
+    for dep in "${missing[@]}"; do
+      case "$dep" in
+        dotnet) ensure_dotnet ;;
+        node)   ensure_node ;;
+      esac
+    done
+  else
+    log ".NET / Node 依赖齐全，跳过补装"
   fi
-  if ! have apt-get; then
-    fail "非 apt 系发行版，请手动安装: ${missing[*]}"
-  fi
-  for dep in "${missing[@]}"; do
-    case "$dep" in
-      dotnet) ensure_dotnet ;;
-      node)   ensure_node ;;
-      mysql)  ensure_mysql ;;
-      redis)  ensure_redis ;;
-    esac
-  done
+  ensure_mysql
+  ensure_redis
 }
 
 route_native() {
