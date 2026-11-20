@@ -1,5 +1,6 @@
 # ============ 构建阶段 ============
-FROM node:20-alpine AS builder
+# node:20 自带 npm 10.8 有 arborist edgesOut 空引用 bug；node:22 的 npm 无此问题且满足 rolldown 引擎要求
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
