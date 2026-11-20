@@ -59,15 +59,31 @@ jobs:
             try { cmd /c "$($u.UninstallString) /S" 2>$null } catch {}
           }
           Start-Sleep -Seconds 15
-          # 2) 仍存在则 PATH 掩蔽：从机器与当前 PATH 移除 docker 目录，模拟未安装，
+          # 2) 仍存在则 PATH 掩蔽：按 docker.exe 真实解析路径精确移除所在目录
+          #    （runner 的 docker 可能来自 chocolatey shim 等不含 Docker 字样的目录），
           #    让安装器真实走自动安装分支（winget 对已装包报非零时脚本按实际可用性容错）
           if (Get-Command docker -ErrorAction SilentlyContinue) {
-            Write-Host 'docker still present after uninstall attempts — masking PATH to exercise auto-install branch'
+            $dc = Get-Command docker
+            Write-Host "docker resolves to: $($dc.Source)"
+            $dirsToRemove = @()
+            if ($dc.Source) { $dirsToRemove += (Split-Path $dc.Source).TrimEnd('\') }
+            $dirsToRemove += @('C:\Program Files\Docker\Docker\resources\bin','C:\ProgramData\DockerDesktop')
+            $filter = {
+              param($entry)
+              $p = $entry.TrimEnd('\')
+              if (-not $p) { return $false }
+              if ($dirsToRemove -contains $p) { return $false }
+              if ($entry -like '*\Docker*' -or $entry -like '*\docker*') { return $false }
+              return $true
+            }
             $machinePath = [Environment]::GetEnvironmentVariable('Path','Machine')
-            $cleaned = ($machinePath -split ';' | Where-Object { $_ -and $_ -notlike '*Docker*' }) -join ';'
+            $cleaned = ($machinePath -split ';' | Where-Object $filter) -join ';'
             [Environment]::SetEnvironmentVariable('Path', $cleaned, 'Machine')
-            $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -and $_ -notlike '*Docker*' }) -join ';'
-            if (Get-Command docker -ErrorAction SilentlyContinue) { throw 'docker still reachable after PATH masking' }
+            $env:PATH = ($env:PATH -split ';' | Where-Object $filter) -join ';'
+            if (Get-Command docker -ErrorAction SilentlyContinue) {
+              $dc2 = Get-Command docker
+              throw "docker still reachable after PATH masking at: $($dc2.Source)"
+            }
             Write-Host 'docker masked from PATH — installer will exercise auto-install branch'
           } else {
             Write-Host 'docker removed — installer auto-install branch will be exercised for real'

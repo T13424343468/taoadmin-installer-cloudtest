@@ -125,6 +125,14 @@ ensure_node() {
   node --version || fail "Node 校验失败"
 }
 
+# 数据库客户端无关：mariadb 与 mysql 二选一（Ubuntu 预装可能是 mysql 客户端）
+db_admin() { # root socket 免密管理入口
+  if have mariadb; then sudo mariadb "$@"; else sudo mysql "$@"; fi
+}
+db_tcp() { # 应用同款 TCP+口令入口
+  if have mariadb; then mariadb "$@"; else mysql "$@"; fi
+}
+
 ensure_mysql() {
   if ! have mysql && ! have mariadb; then
     log "安装 MariaDB（apt）……"
@@ -132,12 +140,31 @@ ensure_mysql() {
     sudo apt-get install -y mariadb-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "mariadb 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
   fi
   sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
-  for i in $(seq 1 15); do sudo mariadb -e "SELECT 1" >/dev/null 2>&1 && break; sleep 2; done
-  # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
-  if ! mysql -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
-    sudo mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('$DB_PWD'); FLUSH PRIVILEGES;" || fail "mariadb root 口令设置失败"
+  local ready=0
+  for i in $(seq 1 15); do
+    if db_admin -e "SELECT 1" >/dev/null 2>&1; then ready=1; break; fi
+    # 服务可能未注册：第 3 轮起尝试直接拉起服务端进程
+    if [[ $i -eq 3 ]]; then
+      if have mariadbd; then sudo mariadbd --user=mysql --daemonize 2>/dev/null || true
+      elif have mysqld; then sudo mysqld --user=mysql --daemonize 2>/dev/null || true
+      fi
+    fi
+    sleep 2
+  done
+  if [[ $ready != 1 ]]; then
+    if ! have mysqld && ! have mariadbd && ! ls /usr/sbin/mysqld /usr/sbin/mariadbd /var/lib/mysql 2>/dev/null; then
+      log "仅有数据库客户端，补装服务端（mariadb-server）……"
+      sudo apt-get install -y mariadb-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "mariadb-server 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
+      sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
+      for i in $(seq 1 15); do db_admin -e "SELECT 1" >/dev/null 2>&1 && { ready=1; break; }; sleep 2; done
+    fi
+    [[ $ready == 1 ]] || fail "数据库服务未就绪（socket/TCP 均无法连接）"
   fi
-  mysql -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1 || fail "mariadb 连接校验失败"
+  # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
+  if ! db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+    db_admin -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DB_PWD'; FLUSH PRIVILEGES;" || fail "数据库 root 口令设置失败"
+  fi
+  db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1 || fail "数据库连接校验失败"
   log "MySQL/MariaDB 已就绪（root 口令与 appsettings 一致）"
 }
 
