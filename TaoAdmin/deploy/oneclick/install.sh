@@ -186,7 +186,7 @@ ensure_mysql() {
   fi
   # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
   if ! db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
-    db_admin -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DB_PWD'; FLUSH PRIVILEGES;" || fail "数据库 root 口令设置失败"
+    db_admin -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_PWD'; FLUSH PRIVILEGES;" || fail "数据库 root 口令设置失败"
   fi
   db_tcp -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1 || fail "数据库连接校验失败"
   log "MySQL/MariaDB 已就绪（root 口令与 appsettings 一致）"
