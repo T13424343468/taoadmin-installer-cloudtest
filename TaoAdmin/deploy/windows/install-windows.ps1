@@ -185,6 +185,21 @@ function Install-DockerDesktop {
     }
     if (-not $ok) { throw 'Docker 引擎未就绪。若系统提示需启用 WSL2/虚拟化或重启，请处理后重跑本脚本（自动续跑）' }
   } else { Write-Host '  [DryRun] 将等待 Docker 引擎就绪' }
+  # 全新安装的 Docker Desktop 默认 Windows 容器模式；本套件镜像均为 Linux 镜像，必须切换
+  if (-not $DryRun) {
+    $osType = docker info --format '{{.OSType}}' 2>$null
+    if ($osType -ne 'linux') {
+      Write-Log "Docker 当前为 $osType 容器模式，切换为 Linux 容器模式……"
+      $dockerCli = 'C:\Program Files\Docker\Docker\DockerCli.exe'
+      if (Test-Path $dockerCli) {
+        & $dockerCli -SwitchDaemon | Out-Null
+        Start-Sleep -Seconds 3
+      }
+      $osType = docker info --format '{{.OSType}}' 2>$null
+      if ($osType -ne 'linux') { throw "Docker 容器模式切换失败（当前 OSType=$osType），无法拉起 Linux 镜像" }
+      Write-Log '已切换为 Linux 容器模式'
+    }
+  }
   Write-Log 'Docker Desktop 就绪'
 }
 
