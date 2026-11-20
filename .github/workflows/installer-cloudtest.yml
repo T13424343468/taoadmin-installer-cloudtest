@@ -59,18 +59,23 @@ jobs:
             try { cmd /c "$($u.UninstallString) /S" 2>$null } catch {}
           }
           Start-Sleep -Seconds 15
-          # 2) 仍存在则 PATH 掩蔽：按 docker.exe 真实解析路径精确移除所在目录
-          #    （runner 的 docker 可能来自 chocolatey shim 等不含 Docker 字样的目录），
-          #    让安装器真实走自动安装分支（winget 对已装包报非零时脚本按实际可用性容错）
+          # 2) 仍存在则掩蔽：runner 把 docker.exe 直接放在 system32，PATH 掩蔽藏不住，
+          #    挪走 CLI（dockerd 若被服务占用则跳过），让安装器真实走自动安装分支
           if (Get-Command docker -ErrorAction SilentlyContinue) {
             $dc = Get-Command docker
             Write-Host "docker resolves to: $($dc.Source)"
+            foreach ($f in @("$env:windir\system32\docker.exe","$env:windir\system32\dockerd.exe")) {
+              if (Test-Path -LiteralPath $f) {
+                try { Move-Item -LiteralPath $f -Destination "$f.masked" -Force; Write-Host "moved $f" } catch { Write-Host "move failed for $f : $_" }
+              }
+            }
+            # 再从机器与当前 PATH 移除 docker 相关目录（双保险）
             $dirsToRemove = @()
             if ($dc.Source) { $dirsToRemove += (Split-Path $dc.Source).TrimEnd('\') }
             $dirsToRemove += @('C:\Program Files\Docker\Docker\resources\bin','C:\ProgramData\DockerDesktop')
             $filter = {
               param($entry)
-              $p = $entry.TrimEnd('\')
+              $p = ([string]$entry).TrimEnd('\')
               if (-not $p) { return $false }
               if ($dirsToRemove -contains $p) { return $false }
               if ($entry -like '*\Docker*' -or $entry -like '*\docker*') { return $false }
@@ -82,9 +87,9 @@ jobs:
             $env:PATH = ($env:PATH -split ';' | Where-Object $filter) -join ';'
             if (Get-Command docker -ErrorAction SilentlyContinue) {
               $dc2 = Get-Command docker
-              throw "docker still reachable after PATH masking at: $($dc2.Source)"
+              throw "docker still reachable after masking at: $($dc2.Source)"
             }
-            Write-Host 'docker masked from PATH — installer will exercise auto-install branch'
+            Write-Host 'docker masked — installer will exercise auto-install branch'
           } else {
             Write-Host 'docker removed — installer auto-install branch will be exercised for real'
           }
