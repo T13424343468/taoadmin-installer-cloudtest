@@ -157,6 +157,11 @@ function Install-DockerDesktop {
       if ($p.ExitCode -ne 0) { throw "Docker Desktop 安装器退出码 $($p.ExitCode)（若提示需重启，请重启后重跑本脚本，会自动续跑）" }
     } else { Write-Host '  [DryRun] 将静默运行 Docker Desktop 安装器' }
   }
+  # 刷新 PATH：安装器写入的机器 PATH 当前进程感知不到，docker CLI 已知路径直接补上
+  $dockerBin = 'C:\Program Files\Docker\Docker\resources\bin'
+  if (Test-Path $dockerBin) { $env:PATH = "$dockerBin;$env:PATH" }
+  $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+  if ($machinePath) { $env:PATH = "$env:PATH;$machinePath" }
   Write-Log '启动 Docker Desktop 并等待引擎就绪（首次启动最长等 5 分钟）……'
   if (-not $DryRun) {
     $dd = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
@@ -182,13 +187,19 @@ function Invoke-DockerRoute {
     try { docker compose up -d; if ($LASTEXITCODE -ne 0) { throw "docker compose up 失败（exit=$LASTEXITCODE）" } }
     finally { Pop-Location }
   } else { Write-Host "  [DryRun] 将在 $($script:ComposeDir) 执行 docker compose up -d" }
-  Write-Log '等待网关健康检查……'
+  Write-Log '等待健康检查（网关/文件中心/前端，每项最多等 2 分钟）……'
   if (-not $DryRun) {
-    if (-not (Wait-HttpOk 'http://127.0.0.1:5000/health' 30 4)) {
-      throw '容器路线健康检查未通过，请查看: docker compose logs gateway'
+    $targets = @(
+      @{ Name = '网关';     Url = 'http://127.0.0.1:5000/health' },
+      @{ Name = '文件中心'; Url = 'http://127.0.0.1:5003/health' },
+      @{ Name = '前端';     Url = 'http://127.0.0.1:8080/' }
+    )
+    foreach ($t in $targets) {
+      if (-not (Wait-HttpOk $t.Url 30 4)) { throw "容器路线健康检查未通过: $($t.Name)（$($t.Url)），请查看: docker compose logs" }
+      Write-Log "容器路线健康检查通过: $($t.Name)"
     }
   } else { Write-Host '  [DryRun] 将等待网关健康检查' }
-  Write-Log '容器路线部署完成：前端 http://localhost:80  网关 http://localhost:5000'
+  Write-Log '容器路线部署完成：前端 http://localhost:8080  网关 http://localhost:5000  文件中心 http://localhost:5003'
 }
 
 # ---------------- 原生路线 ----------------

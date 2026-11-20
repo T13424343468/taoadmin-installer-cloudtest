@@ -89,31 +89,93 @@ route_docker() {
 }
 
 # —— 原生路线 ——
+RUNTIME_DIR="$ROOT/deploy/runtime"
+DB_PWD="Micro@2026"   # 与 appsettings 默认连接串一致
+
+dotnet_ok() { have dotnet && dotnet --version 2>/dev/null | grep -q "^10\."; }
+
+# Node 引擎需满足 rolldown 要求：^20.19.0 || >=22.12.0（不满足时 npm 静默跳过原生绑定）
+node_ok() {
+  have node || return 1
+  node -e 'const v=process.versions.node.split(".").map(Number);const ok=(v[0]===20&&(v[1]>19||(v[1]===19)))||(v[0]>22)||(v[0]===22&&v[1]>=12);process.exit(ok?0:1)' 2>/dev/null
+}
+
+ensure_dotnet() {
+  if dotnet_ok; then log ".NET 10 SDK 已就绪"; return; fi
+  log "安装 .NET 10 SDK（便携模式 -> $RUNTIME_DIR/dotnet10）……"
+  mkdir -p "$RUNTIME_DIR"
+  local script="$RUNTIME_DIR/dotnet-install.sh"
+  curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$script" || fail "dotnet-install.sh 下载失败"
+  bash "$script" --channel 10.0 --install-dir "$RUNTIME_DIR/dotnet10" >> /var/tmp/taoadmin-dotnet-install.log 2>&1 || fail ".NET 10 SDK 安装失败（日志见 /var/tmp/taoadmin-dotnet-install.log）"
+  export DOTNET_ROOT="$RUNTIME_DIR/dotnet10"
+  export PATH="$DOTNET_ROOT:$PATH"
+  dotnet --version | grep -q "^10\." || fail ".NET SDK 版本校验失败"
+}
+
+ensure_node() {
+  if node_ok; then log "Node.js 已就绪 ($(node --version))"; return; fi
+  log "安装 Node.js 22（便携模式 -> $RUNTIME_DIR/node22）……"
+  local ver="v22.23.5"
+  local tgz="node-$ver-linux-x64.tar.xz"
+  mkdir -p "$RUNTIME_DIR/node22"
+  curl -fsSL "https://nodejs.org/dist/$ver/$tgz" -o "/tmp/$tgz" || fail "Node $ver 下载失败"
+  tar -xJf "/tmp/$tgz" -C "$RUNTIME_DIR/node22" --strip-components=1 || fail "Node 解压失败"
+  rm -f "/tmp/$tgz"
+  export PATH="$RUNTIME_DIR/node22/bin:$PATH"
+  node --version || fail "Node 校验失败"
+}
+
+ensure_mysql() {
+  if ! have mysql && ! have mariadb; then
+    log "安装 MariaDB（apt）……"
+    sudo apt-get update -y >> /var/tmp/taoadmin-apt.log 2>&1
+    sudo apt-get install -y mariadb-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "mariadb 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
+  fi
+  sudo service mariadb start 2>/dev/null || sudo service mysql start 2>/dev/null || true
+  for i in $(seq 1 15); do sudo mariadb -e "SELECT 1" >/dev/null 2>&1 && break; sleep 2; done
+  # Ubuntu 默认 root 走 unix_socket 免密，应用走 TCP+口令；统一设为与 appsettings 一致的口令
+  if ! mysql -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+    sudo mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('$DB_PWD'); FLUSH PRIVILEGES;" || fail "mariadb root 口令设置失败"
+  fi
+  mysql -uroot -p"$DB_PWD" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1 || fail "mariadb 连接校验失败"
+  log "MySQL/MariaDB 已就绪（root 口令与 appsettings 一致）"
+}
+
+ensure_redis() {
+  if have redis-server && redis-cli ping >/dev/null 2>&1; then log "Redis 已就绪"; return; fi
+  if ! have redis-server; then
+    log "安装 Redis（apt）……"
+    sudo apt-get update -y >> /var/tmp/taoadmin-apt.log 2>&1
+    sudo apt-get install -y redis-server >> /var/tmp/taoadmin-apt.log 2>&1 || fail "redis 安装失败（日志见 /var/tmp/taoadmin-apt.log）"
+  fi
+  sudo service redis-server start 2>/dev/null || sudo redis-server --daemonize yes || true
+  for i in $(seq 1 15); do redis-cli ping >/dev/null 2>&1 && { log "Redis 已就绪"; return; }; sleep 2; done
+  fail "Redis 未就绪"
+}
+
 ensure_deps() {
   local missing=()
-  have dotnet || missing+=("dotnet")
-  have node   || missing+=("node")
-  have mysql || have mariadb || missing+=("mysql")
+  dotnet_ok || missing+=("dotnet")
+  node_ok   || missing+=("node")
+  { have mysql || have mariadb; } || missing+=("mysql")
   have redis-server || missing+=("redis")
   if [[ ${#missing[@]} -eq 0 ]]; then log "依赖齐全，跳过补装"; return; fi
-  log "检测到缺失依赖: ${missing[*]}"
+  log "检测到缺失/不达标依赖: ${missing[*]}"
   if [[ "${AUTO_DEPS:-0}" != "1" ]]; then
     read -rp "是否自动补装（需要 sudo，Debian/Ubuntu 用 apt）？(y/N): " ans
     [[ "$ans" =~ ^[Yy] ]] || fail "请手动安装缺失依赖后重跑本脚本（自动续跑）"
   fi
-  if have apt-get; then
-    sudo apt-get update -y
-    for dep in "${missing[@]}"; do
-      case "$dep" in
-        dotnet) log ".NET 10 SDK 请按官方脚本安装: https://dot.net/v1/dotnet-install.sh -Channel 10.0";;
-        node)   sudo apt-get install -y nodejs npm || fail "nodejs 安装失败";;
-        mysql)  sudo apt-get install -y mariadb-server || fail "mariadb 安装失败";;
-        redis)  sudo apt-get install -y redis-server || fail "redis 安装失败";;
-      esac
-    done
-  else
+  if ! have apt-get; then
     fail "非 apt 系发行版，请手动安装: ${missing[*]}"
   fi
+  for dep in "${missing[@]}"; do
+    case "$dep" in
+      dotnet) ensure_dotnet ;;
+      node)   ensure_node ;;
+      mysql)  ensure_mysql ;;
+      redis)  ensure_redis ;;
+    esac
+  done
 }
 
 route_native() {
@@ -124,8 +186,7 @@ route_native() {
   else
     (cd "$ROOT/deploy/oneclick" && ./deploy.sh) || fail "deploy.sh 执行失败"
   fi
-  log "原生路线部署完成：网关 http://127.0.0.1:5000"
-  log "前端产物: $ROOT/deploy/publish/frontend（用 Nginx 托管并反代 /api → 5000，配置见 deploy/docker-compose.yml 同目录说明）"
+  log "原生路线部署完成：网关 http://127.0.0.1:5000  前端 http://127.0.0.1:8080（四服务 + 前端全部拉起）"
   log "账号: admin / Admin@123（请立即修改默认口令）"
   log "卸载: ./uninstall.sh（一键卸载，卸载干干净净）"
 }

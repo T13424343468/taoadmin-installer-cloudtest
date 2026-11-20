@@ -37,3 +37,87 @@ jobs:
         with:
           name: installer-logs
           path: TaoAdmin/deploy/windows/runtime/logs/
+
+  container-route:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Baseline docker works
+        shell: pwsh
+        run: docker info
+      - name: Uninstall Docker Desktop (exercise auto-install branch)
+        shell: pwsh
+        run: |
+          winget uninstall -e --id Docker.DockerDesktop --silent --accept-source-agreements 2>$null
+          if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Write-Host 'winget uninstall did not remove docker, trying installer uninstaller...'
+            $dd = 'C:\Program Files\Docker\Docker\Docker Desktop Installer.exe'
+            if (Test-Path $dd) { Start-Process -FilePath $dd -ArgumentList 'uninstall','--quiet' -Wait }
+          }
+          if (Get-Command docker -ErrorAction SilentlyContinue) { throw 'docker still present after uninstall' }
+          Write-Host 'docker removed — installer auto-install branch will be exercised for real'
+      - name: Run installer (container route, real run)
+        shell: pwsh
+        run: ./TaoAdmin/deploy/windows/install-windows.ps1 -Action install -Route docker -Force
+      - name: Verify endpoints (gateway / taofiles / frontend)
+        shell: pwsh
+        run: |
+          foreach ($u in 'http://127.0.0.1:5000/health','http://127.0.0.1:5003/health','http://127.0.0.1:8080/') {
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try { $r = Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 5; if ($r.StatusCode -lt 500) { $ok = $true; break } } catch {}
+              Start-Sleep -Seconds 4
+            }
+            if (-not $ok) { throw "endpoint not ready: $u" }
+            Write-Host "OK $u"
+          }
+      - name: Collect compose state
+        if: always()
+        shell: pwsh
+        run: |
+          cd TaoAdmin/deploy
+          docker compose logs --no-color > $env:GITHUB_WORKSPACE\compose-logs.txt 2>&1
+          docker ps -a > $env:GITHUB_WORKSPACE\docker-ps.txt 2>&1
+          docker compose down -v 2>&1 | Tee-Object -FilePath $env:GITHUB_WORKSPACE\compose-down.txt
+      - name: Upload container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-route-logs
+          path: |
+            compose-logs.txt
+            docker-ps.txt
+            compose-down.txt
+
+  linux-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer (Linux native, real run)
+        run: |
+          cd TaoAdmin/deploy/oneclick
+          AUTO_DEPS=1 ./install.sh --route native --force
+      - name: Verify endpoints (4 services + frontend)
+        run: |
+          for u in http://127.0.0.1:5000/health http://127.0.0.1:5001/health http://127.0.0.1:5002/health http://127.0.0.1:5003/health http://127.0.0.1:8080/; do
+            ok=0
+            for i in $(seq 1 30); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$u" || true)
+              if [ -n "$code" ] && [ "$code" != "000" ] && [ "$code" -lt 500 ]; then ok=1; break; fi
+              sleep 4
+            done
+            if [ "$ok" != "1" ]; then echo "endpoint not ready: $u"; exit 1; fi
+            echo "OK $u"
+          done
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-native-logs
+          path: |
+            /var/tmp/taoadmin-deploy.log
+            /var/tmp/taoadmin-dotnet-install.log
+            /var/tmp/taoadmin-apt.log
+            TaoAdmin/deploy/run/

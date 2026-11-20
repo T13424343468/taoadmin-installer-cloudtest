@@ -8,10 +8,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # TaoAdmin 根目�
 STATE=/var/tmp/taoadmin-deploy.state
 LOG=/var/tmp/taoadmin-deploy.log
 BACKEND_DIR="$ROOT/backend"
+TF_ROOT="${TAOFILES_ROOT:-$ROOT/../TaoFiles}"   # 文件中心与 TaoAdmin 为兄弟目录
 FRONTEND_DIR="$ROOT/frontend"
 PUBLISH_DIR="$ROOT/deploy/publish"
 RUN_DIR="$ROOT/deploy/run"
 DOTNET_ROOT_LOCAL="/root/workspace/.local/dotnet10"
+DB_PWD="Micro@2026"   # 与 appsettings 默认连接串一致
 
 [[ -n "${DOTNET_ROOT:-}" ]] || export DOTNET_ROOT="$DOTNET_ROOT_LOCAL"
 export PATH="$DOTNET_ROOT:$PATH"
@@ -48,6 +50,7 @@ publish_backend() {
   dotnet publish "$BACKEND_DIR/src/TaoAdmin.IdentityService" -c Release -o "$PUBLISH_DIR/backend/identity" --nologo || ok=0
   dotnet publish "$BACKEND_DIR/src/TaoAdmin.GatewayService"  -c Release -o "$PUBLISH_DIR/backend/gateway"  --nologo || ok=0
   dotnet publish "$BACKEND_DIR/src/TaoAdmin.TaskService"     -c Release -o "$PUBLISH_DIR/backend/task"     --nologo || ok=0
+  dotnet publish "$TF_ROOT/src/TaoFiles.Api"                 -c Release -o "$PUBLISH_DIR/backend/taofiles" --nologo || ok=0
   [[ $ok == 1 ]] || return 1
 }
 step 后端发布 publish_backend
@@ -68,41 +71,51 @@ step 前端构建 build_frontend
 init_db() {
   local sql="$ROOT/deploy/sql/tao_admin_init.sql"
   [[ -f "$sql" ]] || { echo "缺初始化 SQL: $sql"; return 1; }
-  if command -v mariadb >/dev/null; then
-    mariadb -uroot --socket=/run/mysqld/mysqld.sock < "$sql" 2>/dev/null \
-      || mariadb -uroot -h127.0.0.1 < "$sql" || return 1   # 优先本机 socket，回退 TCP；幂等：IF NOT EXISTS/INSERT IGNORE
-  elif command -v mysql >/dev/null; then
-    mysql -uroot < "$sql" || return 1
-  else
+  local client=""
+  if command -v mariadb >/dev/null; then client="mariadb"; elif command -v mysql >/dev/null; then client="mysql"; else
     echo "未找到 mariadb/mysql 客户端"; return 1
   fi
+  # 口令优先（与 appsettings 一致，install.sh 已统一设置），socket 免密兜底（沙箱/本机 unix_socket 场景）
+  if $client -uroot -p"$DB_PWD" -h127.0.0.1 < "$sql" >/dev/null 2>&1; then return 0; fi
+  if $client -uroot --socket=/run/mysqld/mysqld.sock < "$sql" >/dev/null 2>&1; then return 0; fi
+  $client -uroot < "$sql"
 }
 step 数据库初始化 init_db
 
 # —— 步骤 5: 服务拉起（已存活则跳过）——
 start_services() {
-  for svc in Identity Gateway; do
-    if curl -sf "http://127.0.0.1:$([[ $svc == Gateway ]] && echo 5000 || echo 5001)/health" >/dev/null 2>&1; then
+  local svc asm dir port
+  for spec in "Identity:TaoAdmin.IdentityService:5001" "Gateway:TaoAdmin.GatewayService:5000" "Task:TaoAdmin.TaskService:5002" "Taofiles:TaoFiles.Api:5003"; do
+    svc="${spec%%:*}"; asm="${spec#*:}"; asm="${asm%%:*}"; port="${spec##*:}"
+    if curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
       echo "$svc 已在运行，跳过"; continue
     fi
-    local asm="$([[ $svc == Gateway ]] && echo TaoAdmin.GatewayService || echo TaoAdmin.IdentityService)"
     local dir="$PUBLISH_DIR/backend/$(echo "$svc" | tr 'A-Z' 'a-z')"
+    # 文件中心存储根目录必须存在，否则 PhysicalFileProvider 启动即抛 DirectoryNotFoundException
+    [[ $svc == Taofiles ]] && mkdir -p "$dir/uploads"
     # 必须以服务目录为工作目录启动，否则读不到 appsettings.json（连接串等配置为空）
     (cd "$dir" && nohup setsid dotnet "./${asm}.dll" >> "$RUN_DIR/${svc}.log" 2>&1 &)
     sleep 0.2
     pgrep -f "${asm}.dll" | tail -1 >> "$RUN_DIR/${svc}.pid"
   done
-  # 冷启动可能含首次建库迁移，健康检查重试至多 60s
-  for i in $(seq 1 30); do
-    if curl -sf http://127.0.0.1:5001/health >/dev/null 2>&1 && curl -sf http://127.0.0.1:5000/health >/dev/null 2>&1; then
-      log "双服务健康检查通过（第 ${i} 次尝试）"; return 0
-    fi
+  # 冷启动可能含首次建库迁移，健康检查重试至多 120s
+  local ok=1
+  for i in $(seq 1 60); do
+    ok=1
+    for port in 5000 5001 5002 5003; do
+      curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1 || { ok=0; break; }
+    done
+    [[ $ok == 1 ]] && { log "四服务健康检查通过（第 ${i} 次尝试）"; break; }
     sleep 2
   done
-  tail -20 "$RUN_DIR/Identity.log" >> "$LOG" 2>/dev/null || true
-  tail -20 "$RUN_DIR/Gateway.log" >> "$LOG" 2>/dev/null || true
-  curl -sf http://127.0.0.1:5001/health || { echo "Identity 健康检查未过"; return 1; }
-  curl -sf http://127.0.0.1:5000/health || { echo "Gateway 健康检查未过"; return 1; }
+  if [[ $ok != 1 ]]; then
+    for svc in Identity Gateway Task Taofiles; do
+      tail -20 "$RUN_DIR/${svc}.log" >> "$LOG" 2>/dev/null || true
+    done
+    for port in 5000 5001 5002 5003; do
+      curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1 || { echo "端口 $port 健康检查未过"; return 1; }
+    done
+  fi
 }
 step 服务拉起 start_services
 
@@ -112,6 +125,22 @@ place_frontend() {
   [[ -f "$PUBLISH_DIR/frontend/index.html" ]] || { echo "index.html 缺失"; return 1; }
 }
 step 前端落位 place_frontend
+
+# —— 步骤 7: 前端静态服务（Node 托管 + /api 反代网关，免 Nginx）——
+start_frontend() {
+  if curl -sf http://127.0.0.1:8080/ >/dev/null 2>&1; then echo "前端已在运行，跳过"; return 0; fi
+  local server="$ROOT/deploy/windows/frontend-server.js"
+  [[ -f "$server" ]] || { echo "缺前端服务脚本: $server"; return 1; }
+  (cd "$PUBLISH_DIR" && FRONTEND_DIST="$PUBLISH_DIR/frontend" nohup setsid node "$server" >> "$RUN_DIR/frontend.log" 2>&1 &)
+  local i
+  for i in $(seq 1 15); do
+    curl -sf http://127.0.0.1:8080/ >/dev/null 2>&1 && { log "前端健康检查通过（8080）"; return 0; }
+    sleep 2
+  done
+  tail -20 "$RUN_DIR/frontend.log" >> "$LOG" 2>/dev/null || true
+  echo "前端健康检查未过"; return 1
+}
+step 前端服务 start_frontend
 
 STEP_END=$(date +%s)
 log "部署完成，用时 $((STEP_END-STEP_START))s。网关 http://127.0.0.1:5000  前端产物 $PUBLISH_DIR/frontend"
