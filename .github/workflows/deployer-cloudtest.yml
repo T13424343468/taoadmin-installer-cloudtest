@@ -82,7 +82,7 @@ jobs:
             $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
             dotnet-dump collect -p $p.Id -o deployer-hang.dmp 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
             if (Test-Path 'deployer-hang.dmp') {
-              dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" "quit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
+              dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" -c "exit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
             }
           }
           try {
