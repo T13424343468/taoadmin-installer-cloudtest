@@ -61,24 +61,11 @@ jobs:
             Write-Host "stopping $($_.Name)"
             Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
           }
-      - name: Diagnose checkout and compile items
-        shell: pwsh
-        run: |
-          Write-Host '--- files in Deployer.App ---'
-          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App -Recurse -File | ForEach-Object { Write-Host $_.FullName.Replace((Get-Location).Path + '\','') }
-          Write-Host '--- evaluated Compile items ---'
-          dotnet msbuild TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -getItem:Compile -p:Configuration=Release -v:q
       - name: Publish deployer exe
         shell: pwsh
         run: |
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo -bl:publish.binlog
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
-      - name: Upload publish binlog
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: publish-binlog
-          path: publish.binlog
       - name: E2E deploy (native route, real run via headless mode)
         shell: pwsh
         run: |

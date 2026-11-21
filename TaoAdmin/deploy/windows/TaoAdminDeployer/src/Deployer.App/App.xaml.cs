@@ -13,6 +13,9 @@ public partial class App : Application
         {
             HeadlessRunner.Run(args);
             Shutdown(HeadlessRunner.ExitCode);
+            return;
         }
+        // GUI mode: show the wizard window (StartupUri removed so headless never opens a window).
+        new MainWindow().Show();
     }
 }
