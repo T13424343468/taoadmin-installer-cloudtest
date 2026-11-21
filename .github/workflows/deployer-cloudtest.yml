@@ -99,6 +99,12 @@ jobs:
             if ($t.Contains('OnStartup entered')) { Write-Host 'E2E APP DLL: HAS new code' } else { Write-Host 'E2E APP DLL: MISSING new code' }
           }
           Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
+          Write-Host '--- Compile items (Release eval):'
+          dotnet msbuild TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -getItem:Compile -p:Configuration=Release -p:RuntimeIdentifier=win-x64 2>&1 | Out-File compile-items.json
+          $j = Get-Content compile-items.json -Raw | ConvertFrom-Json
+          $items = $j.Items.Compile
+          Write-Host "Compile item count: $($items.Count)"
+          $items | ForEach-Object { Write-Host "  $($_.Identity)" }
       - name: Smoke --status (startup + output channel check)
         timeout-minutes: 5
         shell: pwsh
