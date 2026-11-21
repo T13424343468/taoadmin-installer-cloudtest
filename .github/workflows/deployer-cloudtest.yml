@@ -36,42 +36,15 @@ jobs:
           # the SDK add PublishDir/** to DefaultItemExcludes, which silently excludes ALL
           # source files and produces an empty assembly. Runner temp is always safe.
           $out = "$env:RUNNER_TEMP/deployer-out"
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o $out --nologo -bl:publish.binlog
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o $out --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
           Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
           Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
-          Copy-Item publish.binlog "$env:GITHUB_WORKSPACE/publish.binlog" -ErrorAction SilentlyContinue
           $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
           if (-not (Test-Path $exe)) { throw 'published exe missing' }
           $mb = [int]((Get-Item $exe).Length / 1MB)
           Write-Host "published exe size: $mb MB"
           if ($mb -lt 20) { throw "published exe suspiciously small: $mb MB" }
-      - name: Diagnose assembly contents
-        shell: pwsh
-        run: |
-          Write-Host "SDK in use: $(dotnet --version)"
-          Write-Host '--- source files:'
-          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -File -Include *.cs,*.xaml,*.csproj | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
-          Write-Host '--- built dlls:'
-          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -Filter *.dll | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
-          $app = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/bin -Recurse -Filter 'TaoAdminDeployer.dll' | Select-Object -First 1
-          if ($app) {
-            $t = [System.Text.Encoding]::Unicode.GetString([System.IO.File]::ReadAllBytes($app.FullName))
-            if ($t.Contains('OnStartup entered')) { Write-Host 'APP DLL: HAS new code' } else { Write-Host 'APP DLL: MISSING new code' }
-          } else { Write-Host 'APP DLL not found under bin' }
-          $core = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.Core/bin -Recurse -Filter 'TaoAdmin.Deployer.Core.dll' | Select-Object -First 1
-          if ($core) {
-            $t2 = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($core.FullName))
-            if ($t2.Contains('DeployEngine')) { Write-Host 'CORE DLL: HAS code' } else { Write-Host 'CORE DLL: EMPTY' }
-          } else { Write-Host 'CORE DLL not found under bin' }
-          Write-Host '--- publish output dir:'
-          Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
-      - name: Upload binlog
-        uses: actions/upload-artifact@v4
-        with:
-          name: publish-binlog
-          path: publish.binlog
-          if-no-files-found: ignore
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
@@ -103,25 +76,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
           Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
           Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
-      - name: Diagnose e2e assembly contents
-        shell: pwsh
-        run: |
-          Write-Host "SDK in use: $(dotnet --version)"
-          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
-          Write-Host "exe size: $((Get-Item $exe).Length)"
-          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -Filter 'TaoAdminDeployer.dll' | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
-          $app = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/bin -Recurse -Filter 'TaoAdminDeployer.dll' | Select-Object -First 1
-          if ($app) {
-            $t = [System.Text.Encoding]::Unicode.GetString([System.IO.File]::ReadAllBytes($app.FullName))
-            if ($t.Contains('OnStartup entered')) { Write-Host 'E2E APP DLL: HAS new code' } else { Write-Host 'E2E APP DLL: MISSING new code' }
-          }
-          Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
-          Write-Host '--- Compile items (Release eval):'
-          dotnet msbuild TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -getItem:Compile -p:Configuration=Release -p:RuntimeIdentifier=win-x64 2>&1 | Out-File compile-items.json
-          $j = Get-Content compile-items.json -Raw | ConvertFrom-Json
-          $items = $j.Items.Compile
-          Write-Host "Compile item count: $($items.Count)"
-          $items | ForEach-Object { Write-Host "  $($_.Identity)" }
       - name: Smoke --status (startup + output channel check)
         timeout-minutes: 5
         shell: pwsh
@@ -195,19 +149,6 @@ jobs:
           Get-Content 'deployer-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
           Get-Content 'deployer-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
           if ($p.ExitCode -ne 0) { throw "deployer exit code $($p.ExitCode)" }
-      - name: Diagnose failure (netstat / processes / defender)
-        if: failure()
-        shell: pwsh
-        run: |
-          Write-Host '--- netstat 6379/3306:'
-          netstat -ano -p tcp | Select-String -Pattern '6379|3306' | ForEach-Object { Write-Host "  $_" }
-          Write-Host '--- redis process:'
-          Get-Process redis-server -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  alive pid=$($_.Id)" }
-          if (-not $?) { Write-Host '  redis-server NOT running' }
-          Write-Host '--- redis dir:'
-          Get-ChildItem TaoAdmin/deploy/windows/runtime/redis -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name) $($_.Length)" }
-          Write-Host '--- defender threats:'
-          try { Get-MpThreatDetection -ErrorAction Stop | Select-Object -First 5 | ForEach-Object { Write-Host "  $($_.InitialDetectionTime) $($_.ProcessName) $($_.Resources -join ',')" } } catch { Write-Host "  mp query: $_" }
       - name: Verify endpoints (5 services)
         shell: pwsh
         run: |
