@@ -86,6 +86,19 @@ jobs:
         run: |
           dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+      - name: Diagnose e2e assembly contents
+        shell: pwsh
+        run: |
+          Write-Host "SDK in use: $(dotnet --version)"
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          Write-Host "exe size: $((Get-Item $exe).Length)"
+          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -Filter 'TaoAdminDeployer.dll' | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
+          $app = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/bin -Recurse -Filter 'TaoAdminDeployer.dll' | Select-Object -First 1
+          if ($app) {
+            $t = [System.Text.Encoding]::Unicode.GetString([System.IO.File]::ReadAllBytes($app.FullName))
+            if ($t.Contains('OnStartup entered')) { Write-Host 'E2E APP DLL: HAS new code' } else { Write-Host 'E2E APP DLL: MISSING new code' }
+          }
+          Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
       - name: Smoke --status (startup + output channel check)
         timeout-minutes: 5
         shell: pwsh
