@@ -71,8 +71,14 @@ jobs:
       - name: Publish deployer exe
         shell: pwsh
         run: |
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo -bl:publish.binlog
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+      - name: Upload publish binlog
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-binlog
+          path: publish.binlog
       - name: E2E deploy (native route, real run via headless mode)
         shell: pwsh
         run: |
