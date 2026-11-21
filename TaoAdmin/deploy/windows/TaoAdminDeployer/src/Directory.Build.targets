@@ -1,0 +1,14 @@
+<Project>
+
+  <!-- TEMP DIAGNOSTIC: list Compile items right before the Csc task runs. -->
+  <Target Name="_DiagBeforeCoreCompile" BeforeTargets="CoreCompile">
+    <Message Importance="High" Text="DIAGBEFORE [$([System.DateTime]::Now.ToString('HH:mm:ss.fff'))] Project=$(MSBuildProjectName) CompileCount=@(Compile->Count())" />
+    <Message Importance="High" Text="DIAGBEFORE item: %(Compile.Identity) (FullPath=%(Compile.FullPath))" />
+  </Target>
+
+  <!-- TEMP DIAGNOSTIC: show the assembly Csc just wrote. -->
+  <Target Name="_DiagAfterCoreCompile" AfterTargets="CoreCompile">
+    <Message Importance="High" Text="DIAGAFTER Project=$(MSBuildProjectName) IntermediateAssembly=@(IntermediateAssembly->'%(FullPath)')" />
+  </Target>
+
+</Project>

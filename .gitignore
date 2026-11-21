@@ -4,3 +4,5 @@ obj/
 TaoFiles/src/TaoFiles.Api/uploads/
 .tmp-logs/
 .tmp-dump/
+.tmp-exe/
+.tmp-exe2/

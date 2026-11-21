@@ -32,8 +32,9 @@ jobs:
       - name: Publish self-contained single-file exe
         shell: pwsh
         run: |
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo -bl:publish.binlog
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+          Copy-Item publish.binlog "$env:GITHUB_WORKSPACE/publish.binlog" -ErrorAction SilentlyContinue
           $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
           if (-not (Test-Path $exe)) { throw 'published exe missing' }
           $mb = [int]((Get-Item $exe).Length / 1MB)
@@ -59,6 +60,12 @@ jobs:
           } else { Write-Host 'CORE DLL not found under bin' }
           Write-Host '--- publish output dir:'
           Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
+      - name: Upload binlog
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-binlog
+          path: publish.binlog
+          if-no-files-found: ignore
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
