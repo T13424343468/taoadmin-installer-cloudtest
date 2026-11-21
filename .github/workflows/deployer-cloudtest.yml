@@ -195,6 +195,19 @@ jobs:
           Get-Content 'deployer-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
           Get-Content 'deployer-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
           if ($p.ExitCode -ne 0) { throw "deployer exit code $($p.ExitCode)" }
+      - name: Diagnose failure (netstat / processes / defender)
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host '--- netstat 6379/3306:'
+          netstat -ano -p tcp | Select-String -Pattern '6379|3306' | ForEach-Object { Write-Host "  $_" }
+          Write-Host '--- redis process:'
+          Get-Process redis-server -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  alive pid=$($_.Id)" }
+          if (-not $?) { Write-Host '  redis-server NOT running' }
+          Write-Host '--- redis dir:'
+          Get-ChildItem TaoAdmin/deploy/windows/runtime/redis -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name) $($_.Length)" }
+          Write-Host '--- defender threats:'
+          try { Get-MpThreatDetection -ErrorAction Stop | Select-Object -First 5 | ForEach-Object { Write-Host "  $($_.InitialDetectionTime) $($_.ProcessName) $($_.Resources -join ',')" } } catch { Write-Host "  mp query: $_" }
       - name: Verify endpoints (5 services)
         shell: pwsh
         run: |
