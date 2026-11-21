@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-card title="通知渠道" style="max-width: 640px; margin: 0 auto">
     <template #extra><a-tag color="orange">只埋不接线：配置仅留存，不发真实请求</a-tag></template>
     <a-form layout="vertical" :model="form">

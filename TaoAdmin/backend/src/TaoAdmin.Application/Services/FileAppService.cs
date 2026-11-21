@@ -1,4 +1,5 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
+using Microsoft.Extensions.Caching.Memory;
 using SqlSugar;
 using TaoAdmin.Common.Http;
 using TaoAdmin.Common.Storage;
@@ -31,7 +32,7 @@ public class FileUploadResult
 /// 文件中心应用服务：上传（MD5 秒传去重）、分页查询、下载（取物理流）、删除（软删+物理删）。
 /// 存储经 IFileStorageProvider 抽象：本地盘 / MinIO 对象存储可配置切换，业务代码零改动。
 /// </summary>
-public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, SnowflakeIdGenerator snowflake)
+public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, SnowflakeIdGenerator snowflake, IMemoryCache cache)
 {
     /// <summary>上传大小上限（5MB，与前端导入上限一致）</summary>
     public const long MaxUploadSize = 5 * 1024 * 1024;
@@ -40,18 +41,53 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, Sn
     public static readonly string[] AllowedExtensions =
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".md", ".csv", ".xlsx", ".xls", ".docx", ".doc", ".zip", ".mp3", ".mp4"];
 
-    /// <summary>分页查询文件记录（管理端，keyword 按原文件名模糊）</summary>
-    public async Task<PageResult<SysFile>> PageAsync(int pageIndex, int pageSize, string? keyword)
+    /// <summary>
+    /// 分页查询文件记录（管理端，keyword 按原文件名模糊）。
+    /// 亿级优化：总数按关键字缓存 5 分钟；深翻页走 Id 游标（Keyset），恒定速度不随页码衰减。
+    /// </summary>
+    public async Task<PageResult<SysFile>> PageAsync(int pageIndex, int pageSize, string? keyword, string? cursor = null)
     {
         if (pageIndex < 1) pageIndex = 1;
         if (pageSize is < 1 or > 100) pageSize = 10;
         var query = db.Queryable<SysFile>().Where(f => f.IsDeleted == false);
         if (!string.IsNullOrWhiteSpace(keyword))
             query = query.Where(f => f.FileName.Contains(keyword.Trim()));
-        var total = await query.CountAsync();
+
+        // 总数按关键字缓存 5 分钟：亿级表上 COUNT 全表代价高，翻页期间复用同一口径
+        var cacheKey = $"file:total:{keyword?.Trim()}";
+        var total = await cache.GetOrCreateAsync(cacheKey, async e =>
+        {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            return (long)await query.CountAsync();
+        });
+
+        // 游标翻页：Id 为主键，直接定位；解析失败回退 OFFSET
+        long? curId = ParseCursor(cursor);
+        if (curId.HasValue)
+            query = query.Where(f => f.Id < curId!.Value);
+
         var items = await query.OrderBy(f => f.Id, OrderByType.Desc)
-            .Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync();
-        return new PageResult<SysFile>(total, pageIndex, pageSize, items);
+            .Take(pageSize).ToListAsync();
+        string? nextCursor = items.Count == pageSize && items.Count > 0 ? EncodeCursor(items[^1].Id) : null;
+        return new PageResult<SysFile>(total, pageIndex, pageSize, items, nextCursor);
+    }
+
+    /// <summary>游标格式：Base64("Id")；解析失败按无游标处理</summary>
+    internal static string EncodeCursor(long id)
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(id.ToString()));
+
+    internal static long? ParseCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
+            return long.TryParse(raw, out var id) ? id : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

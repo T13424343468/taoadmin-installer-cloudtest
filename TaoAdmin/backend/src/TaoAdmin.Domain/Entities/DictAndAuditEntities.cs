@@ -69,6 +69,9 @@ public class SysDictData : BaseEntity, TaoAdmin.Common.Entities.ITenantEntity
 /// 操作日志表（sys_operation_log）：记录所有写操作的审计轨迹，登录成功/失败也记录在内。
 /// </summary>
 [SugarTable("sys_operation_log", TableDescription = "操作日志")]
+[SugarIndex("idx_oplog_created_id", nameof(BaseEntity.CreatedAt), OrderByType.Asc, nameof(BaseEntity.Id), OrderByType.Desc)]
+[SugarIndex("idx_oplog_user_created", nameof(UserName), OrderByType.Asc, nameof(BaseEntity.CreatedAt), OrderByType.Asc)]
+[SugarIndex("idx_oplog_category_created", nameof(Category), OrderByType.Asc, nameof(BaseEntity.CreatedAt), OrderByType.Asc)]
 public class SysOperationLog : BaseEntity
 {
     /// <summary>操作人 ID（0 = 未登录/登录失败）</summary>

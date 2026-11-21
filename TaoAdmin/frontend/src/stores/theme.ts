@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia';
+﻿import { defineStore } from 'pinia';
 
 /** 预设主色板（设计定稿：8 色，默认拂晓蓝） */
 export const PRIMARY_PRESETS = [

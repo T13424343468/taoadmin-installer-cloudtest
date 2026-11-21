@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 页面水印层：防篡改（DOM 观察+自愈），pointer-events 穿透不挡交互 -->
   <div v-if="wm.enabled" ref="layerRef" class="watermark-layer" :style="layerStyle" aria-hidden="true" />
 </template>

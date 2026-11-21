@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaoAdmin.Application.Services;
 using TaoAdmin.Common.Auth;
@@ -17,12 +17,13 @@ public class FileController : BaseApiController
     private readonly FileAppService _svc;
     public FileController(FileAppService svc) => _svc = svc;
 
-    /// <summary>分页查询文件记录（keyword 按原文件名模糊）</summary>
+    /// <summary>分页查询文件记录（keyword 按原文件名模糊；cursor=上一页 NextCursor 时走游标深翻页）</summary>
     [HttpGet]
     [Permission("sys:file:manage")]
     public async Task<ApiResult<PageResult<TaoAdmin.Domain.Entities.SysFile>>> Page(
-        [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10, [FromQuery] string? keyword = null)
-        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, keyword));
+        [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10, [FromQuery] string? keyword = null,
+        [FromQuery] string? cursor = null)
+        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, keyword, cursor));
 
     /// <summary>上传文件（multipart/form-data，字段名 file）</summary>
     [HttpPost("upload")]

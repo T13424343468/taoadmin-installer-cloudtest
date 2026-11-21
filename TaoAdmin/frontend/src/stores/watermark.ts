@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia';
+﻿import { defineStore } from 'pinia';
 
 /** 水印开关偏好（第五班路一）。默认开启；localStorage 持久化，非法值回退 true。 */
 const WM_KEY = 'taoadmin-watermark';

@@ -1,4 +1,4 @@
-using SqlSugar;
+﻿using SqlSugar;
 using TaoAdmin.Application.Services;
 using TaoAdmin.Common.Snowflake;
 using TaoAdmin.Common.Storage;
@@ -37,7 +37,7 @@ public class FileAppServiceTests : IDisposable
         });
         db.CodeFirst.InitTables<SysFile>();
         storage ??= new LocalFileStorageProvider(_root, () => 726311817211621376L);
-        return (new FileAppService(db, storage, new SnowflakeIdGenerator(1, 1)), db, storage);
+        return (new FileAppService(db, storage, new SnowflakeIdGenerator(1, 1), new Microsoft.Extensions.Caching.Memory.MemoryCache(Microsoft.Extensions.Options.Options.Create(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()))), db, storage);
     }
 
     private static Stream Bytes(params byte[] data) => new MemoryStream(data);

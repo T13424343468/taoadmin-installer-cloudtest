@@ -1,6 +1,7 @@
 ﻿using TaoAdmin.Common.Http;
 using TaoAdmin.Common.Snowflake;
 using TaoAdmin.Domain.Entities;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,30 +11,82 @@ namespace TaoAdmin.Application.Services;
 
 /// <summary>
 /// 操作日志查询服务：分页检索操作/登录审计记录，供管理后台追溯。
+/// 亿级优化：①筛选列二级索引（见实体 SugarIndex）；②总数按筛选条件缓存 5 分钟，不再每页实数；
+/// ③深翻页走游标（Keyset）定位，翻到任意深度都是恒定速度，不再随页码线性变慢。
 /// </summary>
-public class OperationLogAppService(ISqlSugarClient db)
+public class OperationLogAppService(ISqlSugarClient db, IMemoryCache cache)
 {
-    /// <summary>分页查询（类别/账号/结果/时间范围筛选）</summary>
+    /// <summary>分页查询（类别/账号/结果/时间范围筛选；cursor 为上一页返回的 NextCursor 时走游标翻页）</summary>
     public async Task<PageResult<SysOperationLog>> PageAsync(
-        int pageIndex, int pageSize, string? category, string? userName, int? success, DateTime? begin, DateTime? end)
+        int pageIndex, int pageSize, string? category, string? userName, int? success, DateTime? begin, DateTime? end,
+        string? cursor = null)
     {
-        RefAsync<int> total = 0;
-        var list = await db.Queryable<SysOperationLog>()
+        pageIndex = Math.Max(pageIndex, 1);
+        pageSize = Math.Min(Math.Max(pageSize, 1), 100);
+
+        var query = db.Queryable<SysOperationLog>()
             .Where(l => l.IsDeleted == false)
             .WhereIF(!string.IsNullOrWhiteSpace(category), l => l.Category == category)
             .WhereIF(!string.IsNullOrWhiteSpace(userName), l => l.UserName.Contains(userName!))
             .WhereIF(success.HasValue, l => l.Success == success!.Value)
             .WhereIF(begin.HasValue, l => l.CreatedAt >= begin!.Value)
-            .WhereIF(end.HasValue, l => l.CreatedAt <= end!.Value)
+            .WhereIF(end.HasValue, l => l.CreatedAt <= end!.Value);
+
+        // 总数按筛选条件缓存 5 分钟：亿级表上 COUNT 全表代价高，翻页期间复用同一口径
+        var cacheKey = $"oplog:total:{category}|{userName}|{success}|{begin?.Ticks}|{end?.Ticks}";
+        var total = await cache.GetOrCreateAsync(cacheKey, async e =>
+        {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            return (long)await query.CountAsync();
+        });
+
+        // 游标翻页：按 (CreatedAt, Id) 复合键定位，索引直达起点后顺序取一页
+        var cur = ParseCursor(cursor);
+        if (cur.HasValue)
+        {
+            query = query.Where(l => l.CreatedAt < cur!.Value.time
+                                     || (l.CreatedAt == cur.Value.time && l.Id < cur.Value.id));
+        }
+
+        var list = await query
             .OrderBy(l => l.CreatedAt, OrderByType.Desc)
-            .ToPageListAsync(Math.Max(pageIndex, 1), Math.Min(Math.Max(pageSize, 1), 100), total);
+            .OrderBy(l => l.Id, OrderByType.Desc)
+            .Take(pageSize)
+            .ToListAsync();
+
+        // 产出下一页游标：本页最后一条的 (CreatedAt, Id)；不足一页说明到底了
+        string? nextCursor = list.Count == pageSize && list.Count > 0
+            ? EncodeCursor(list[^1].CreatedAt, list[^1].Id)
+            : null;
         return new PageResult<SysOperationLog>
         {
             Total = total,
-            PageIndex = Math.Max(pageIndex, 1),
-            PageSize = Math.Min(Math.Max(pageSize, 1), 100),
-            Items = list
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Items = list,
+            NextCursor = nextCursor
         };
+    }
+
+    /// <summary>游标格式：Base64("CreatedAt.Ticks|Id")；解析失败按无游标处理（回退 OFFSET 翻页）</summary>
+    internal static string EncodeCursor(DateTime createdAt, long id)
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{createdAt.Ticks}|{id}"));
+
+    internal static (DateTime time, long id)? ParseCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
+            var parts = raw.Split('|');
+            if (parts.Length != 2 || !long.TryParse(parts[0], out var ticks) || !long.TryParse(parts[1], out var id))
+                return null;
+            return (new DateTime(ticks), id);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 }
 

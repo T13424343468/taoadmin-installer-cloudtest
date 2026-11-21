@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useTabsStore, HOME_TAB } from '@/stores/tabs';
 import { useThemeStore, DEFAULT_PRIMARY } from '@/stores/theme';

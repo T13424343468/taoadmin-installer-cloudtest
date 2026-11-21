@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia';
+﻿import { defineStore } from 'pinia';
 
 /**
  * 锁屏状态（第五班路一）。

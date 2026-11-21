@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using Microsoft.Extensions.Caching.Memory;
 using TaoFiles.Api.Entities;
 using TaoFiles.Api.Storage;
 using SqlSugar;
@@ -39,13 +40,16 @@ public class PageOf<T>
 {
     public int total { get; set; }
     public List<T> list { get; set; } = new();
+    /// <summary>下一页游标（亿级深翻页用：下一页请求带上它可恒定速度定位；为空表示没有下一页）</summary>
+    public string? nextCursor { get; set; }
 }
 
 /// <summary>
 /// 文件应用服务：上传（MD5 去重/秒传）、分页列表、删除。
 /// 同一个文件反复上传只保留一份物理文件与一条记录——这正是「可反复使用」的核心。
+/// 亿级优化：总数按筛选条件缓存 5 分钟；深翻页走 (CreatedAt, Id) 游标（Keyset），恒定速度不随页码衰减。
 /// </summary>
-public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IConfiguration config)
+public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IConfiguration config, IMemoryCache cache)
 {
     private string[] AllowedExt => (config["FileStorage:AllowedExtensions"]
         ?? ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.mp3,.mp4,.txt,.md,.csv")
@@ -103,19 +107,42 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IC
         };
     }
 
-    /// <summary>分页列表（按文件名/来源筛选）</summary>
-    public async Task<PageOf<FileDto>> PageAsync(int pageIndex, int pageSize, string? keyword, string? source)
+    /// <summary>分页列表（按文件名/来源筛选；cursor=上一页 nextCursor 时走游标深翻页）</summary>
+    public async Task<PageOf<FileDto>> PageAsync(int pageIndex, int pageSize, string? keyword, string? source, string? cursor = null)
     {
-        RefAsync<int> total = 0;
-        var list = await db.Queryable<SysFile>()
+        var query = db.Queryable<SysFile>()
             .Where(f => f.IsDeleted == false)
             .WhereIF(!string.IsNullOrWhiteSpace(keyword), f => f.FileName.Contains(keyword!))
-            .WhereIF(!string.IsNullOrWhiteSpace(source), f => f.Source == source)
+            .WhereIF(!string.IsNullOrWhiteSpace(source), f => f.Source == source);
+
+        // 总数按筛选条件缓存 5 分钟：亿级表上 COUNT 全表代价高，翻页期间复用同一口径
+        var cacheKey = $"fc:total:{keyword?.Trim()}|{source?.Trim()}";
+        var total = await cache.GetOrCreateAsync(cacheKey, async e =>
+        {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            return await query.CountAsync();
+        });
+
+        // 游标翻页：按 (CreatedAt, Id) 复合键定位，索引直达起点后顺序取一页
+        var cur = ParseCursor(cursor);
+        if (cur.HasValue)
+        {
+            query = query.Where(f => f.CreatedAt < cur!.Value.time
+                                     || (f.CreatedAt == cur.Value.time && f.Id < cur.Value.id));
+        }
+
+        var list = await query
             .OrderBy(f => f.CreatedAt, OrderByType.Desc)
-            .ToPageListAsync(pageIndex, pageSize, total);
+            .OrderBy(f => f.Id, OrderByType.Desc)
+            .Take(pageSize)
+            .ToListAsync();
+        string? nextCursor = list.Count == pageSize && list.Count > 0
+            ? EncodeCursor(list[^1].CreatedAt, list[^1].Id)
+            : null;
         return new PageOf<FileDto>
         {
             total = total,
+            nextCursor = nextCursor,
             list = list.Select(f => new FileDto
             {
                 id = f.Id.ToString(), fileName = f.FileName, fileUrl = f.FileUrl, size = f.Size,
@@ -123,6 +150,27 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IC
                 source = f.Source, createdAt = f.CreatedAt
             }).ToList()
         };
+    }
+
+    /// <summary>游标格式：Base64("CreatedAt.Ticks|Id")；解析失败按无游标处理（回退 OFFSET 翻页）</summary>
+    internal static string EncodeCursor(DateTime createdAt, long id)
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{createdAt.Ticks}|{id}"));
+
+    internal static (DateTime time, long id)? ParseCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
+            var parts = raw.Split('|');
+            if (parts.Length != 2 || !long.TryParse(parts[0], out var ticks) || !long.TryParse(parts[1], out var id))
+                return null;
+            return (new DateTime(ticks), id);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     /// <summary>删除（软删；physicalDelete=true 时同时清理磁盘文件）</summary>

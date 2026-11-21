@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 锁屏遮罩：fixed 全屏 z-index 2000，盖住一切交互；输对密码解锁回原页面 -->
   <div v-if="lock.isLocked" class="lock-screen" @click.stop>
     <div class="lock-card">

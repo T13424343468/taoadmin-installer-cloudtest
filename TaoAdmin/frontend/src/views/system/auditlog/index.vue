@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-card title="审计日志">
     <template #extra>
       <a-popconfirm title="立即按保留策略清理过期日志？" @confirm="onCleanup">
@@ -82,6 +82,9 @@ const query = reactive({
   userName: undefined as string | undefined,
 });
 
+// 游标缓存：记录每一页返回的下一页游标，翻下一页时带上可恒定速度定位（亿级深翻页不衰减）
+const cursorMap = new Map<number, string>();
+
 function rangeParams() {
   const r = range.value as [string, string] | undefined;
   return r && r[0] && r[1] ? { begin: r[0], end: r[1] } : {};
@@ -90,9 +93,18 @@ function rangeParams() {
 async function load() {
   loading.value = true;
   try {
-    const page = await getAuditLogs({ ...query, success: success.value, ...rangeParams() });
+    // 上一页的游标存在时走游标翻页（顺序翻页场景）；跳页/首次加载回退 OFFSET
+    const prevCursor = cursorMap.get(query.pageIndex - 1);
+    const page = await getAuditLogs({
+      ...query,
+      success: success.value,
+      ...rangeParams(),
+      ...(prevCursor ? { cursor: prevCursor } : {}),
+    });
     rows.value = page.items;
     total.value = page.total;
+    if (page.nextCursor) cursorMap.set(query.pageIndex, page.nextCursor);
+    else cursorMap.delete(query.pageIndex);
   } finally {
     loading.value = false;
   }
@@ -100,6 +112,7 @@ async function load() {
 
 function reload() {
   query.pageIndex = 1;
+  cursorMap.clear();
   void load();
 }
 

@@ -1,4 +1,4 @@
-using TaoAdmin.Common.Snowflake;
+﻿using TaoAdmin.Common.Snowflake;
 using Xunit;
 
 namespace TaoAdmin.Tests.Snowflake;

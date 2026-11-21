@@ -7,6 +7,8 @@ namespace TaoFiles.Api.Entities;
 /// 业务系统只需保存 <see cref="FileUrl"/>（相对路径），拼接服务地址即可访问。
 /// </summary>
 [SugarTable("sys_file", TableDescription = "文件记录")]
+[SugarIndex("idx_file_created_id", nameof(CreatedAt), OrderByType.Asc, nameof(Id), OrderByType.Desc)]
+[SugarIndex("idx_file_name", nameof(FileName), OrderByType.Asc)]
 public class SysFile
 {
     /// <summary>主键（雪花ID）</summary>

@@ -325,7 +325,10 @@ CREATE TABLE `sys_operation_log` (
   `CreatedAt` datetime NOT NULL COMMENT '创建时间',
   `UpdatedAt` datetime NOT NULL COMMENT '更新时间',
   `IsDeleted` tinyint(1) NOT NULL COMMENT '软删除标记',
-  PRIMARY KEY (`Id`)
+  PRIMARY KEY (`Id`),
+  KEY `idx_oplog_created_id` (`CreatedAt`,`Id` DESC),
+  KEY `idx_oplog_user_created` (`UserName`,`CreatedAt`),
+  KEY `idx_oplog_category_created` (`Category`,`CreatedAt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='操作日志';
 /*!40101 SET character_set_client = @saved_cs_client */;
 

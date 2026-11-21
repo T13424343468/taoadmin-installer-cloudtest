@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 侧栏菜单构建（单一来源，编码规范〇·七.3 归一）。
  * 历史坑（第三班遗留）：layout 里三个来源拼接（Root 动态子路由 / 顶层 dir 路由 /
  * matched[0].children||Root.children），目录页激活时 matched[0]=dir 路由，

@@ -1,4 +1,4 @@
-using TaoAdmin.Common.Snowflake;
+﻿using TaoAdmin.Common.Snowflake;
 using TaoAdmin.Domain.Entities;
 using Microsoft.Extensions.Caching.Memory;
 using SqlSugar;

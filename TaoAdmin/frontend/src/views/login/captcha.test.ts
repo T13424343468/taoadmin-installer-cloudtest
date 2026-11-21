@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // 验证登录页验证码交互：进入即拉取、失败后刷新、成功携带 captchaId/captchaCode
 const { loginMock, getCaptchaMock } = vi.hoisted(() => ({

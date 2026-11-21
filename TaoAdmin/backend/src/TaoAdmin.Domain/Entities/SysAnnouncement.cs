@@ -1,4 +1,4 @@
-using TaoAdmin.Common.Entities;
+﻿using TaoAdmin.Common.Entities;
 using SqlSugar;
 
 namespace TaoAdmin.Domain.Entities;

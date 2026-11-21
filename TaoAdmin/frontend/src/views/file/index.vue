@@ -17,7 +17,7 @@
         placeholder="按文件名搜索"
         style="width: 260px"
         allow-clear
-        @search="loadData(1)"
+        @search="onSearch"
       />
 
       <div class="spacer" />
@@ -158,24 +158,38 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+// 游标缓存：记录每一页返回的下一页游标，翻下一页时带上可恒定速度定位（亿级深翻页不衰减）
+const cursorMap = new Map<number, string>();
+
 async function loadData(page = query.pageIndex): Promise<void> {
   loading.value = true;
   try {
     query.pageIndex = page;
+    // 上一页的游标存在时走游标翻页（顺序翻页场景）；跳页/首次加载回退 OFFSET
+    const prevCursor = cursorMap.get(page - 1);
     const data = await listFiles({
       pageIndex: page,
       pageSize: pagination.pageSize,
       keyword: keyword.value || undefined,
+      ...(prevCursor ? { cursor: prevCursor } : {}),
     });
     files.value = data.list || [];
     total.value = data.total;
     pagination.current = page;
     pagination.total = data.total;
+    if (data.nextCursor) cursorMap.set(page, data.nextCursor);
+    else cursorMap.delete(page);
   } catch (e: any) {
     message.error(e.message || '加载失败');
   } finally {
     loading.value = false;
   }
+}
+
+/** 搜索条件变化：清空游标缓存后回到第一页 */
+function onSearch(): void {
+  cursorMap.clear();
+  void loadData(1);
 }
 
 /** 拦截默认上传，改走文件中心接口 */

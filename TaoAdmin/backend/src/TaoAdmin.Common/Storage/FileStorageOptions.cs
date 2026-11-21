@@ -1,4 +1,4 @@
-namespace TaoAdmin.Common.Storage;
+﻿namespace TaoAdmin.Common.Storage;
 
 /// <summary>
 /// 文件存储配置（appsettings 节 FileStorage）：

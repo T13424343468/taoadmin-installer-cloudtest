@@ -71,11 +71,12 @@ public class OperationLogController : BaseApiController
     private readonly OperationLogAppService _svc;
     public OperationLogController(OperationLogAppService svc) => _svc = svc;
 
-    /// <summary>操作日志分页（类别：login 登录 / operation 操作）</summary>
+    /// <summary>操作日志分页（类别：login 登录 / operation 操作；cursor=上一页 NextCursor 时走游标深翻页）</summary>
     [HttpGet]
     [Permission("sys:log:query")]
     public async Task<ApiResult<PageResult<SysOperationLog>>> Page([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10,
         [FromQuery] string? category = null, [FromQuery] string? userName = null,
-        [FromQuery] int? success = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null)
-        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, category, userName, success, begin, end));
+        [FromQuery] int? success = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null,
+        [FromQuery] string? cursor = null)
+        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, category, userName, success, begin, end, cursor));
 }

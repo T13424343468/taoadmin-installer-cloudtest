@@ -1,4 +1,4 @@
-import { request } from './request';
+﻿import { request } from './request';
 
 /** 登录安全设置（未配置的键后端返回内置默认值） */
 export interface LoginSecuritySettings {
@@ -58,6 +58,8 @@ export interface AuditLogPage {
   pageIndex: number;
   pageSize: number;
   items: AuditLogItem[];
+  /** 下一页游标（亿级深翻页用；为空表示没有下一页） */
+  nextCursor?: string | null;
 }
 
 /** 审计日志分页查询参数 */
@@ -69,6 +71,8 @@ export interface AuditLogQuery {
   success?: number;
   begin?: string;
   end?: string;
+  /** 上一页返回的游标：带上后走游标翻页，深翻页恒定速度 */
+  cursor?: string;
 }
 
 /** 审计日志分页 */

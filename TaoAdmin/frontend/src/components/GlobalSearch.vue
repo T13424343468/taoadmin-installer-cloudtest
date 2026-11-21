@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 全局搜索浮层：Ctrl+K / Cmd+K / 顶栏按钮唤起；搜菜单（本地）+ 用户/公告（既有接口，不新增后端） -->
   <a-modal
     v-model:open="visible"

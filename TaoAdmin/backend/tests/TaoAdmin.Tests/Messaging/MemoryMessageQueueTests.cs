@@ -1,4 +1,4 @@
-using TaoAdmin.Common.Messaging;
+﻿using TaoAdmin.Common.Messaging;
 using Xunit;
 
 namespace TaoAdmin.Tests.Messaging;

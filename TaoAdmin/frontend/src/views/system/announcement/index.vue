@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-container">
     <!-- 搜索区 -->
     <FilterBar :values="query" :fields="filterFields" @search="loadData(1)" @reset="resetQuery" />

@@ -23,6 +23,8 @@ public class PageResult<T>
     public int PageSize { get; set; }
     /// <summary>当前页数据</summary>
     public List<T> Items { get; set; } = new();
+    /// <summary>下一页游标（亿级深翻页用：下一页请求带上它可恒定速度定位；为空表示没有下一页或未启用游标）</summary>
+    public string? NextCursor { get; set; }
 
     public PageResult() { }
 
@@ -32,5 +34,11 @@ public class PageResult<T>
         PageIndex = pageIndex;
         PageSize = pageSize;
         Items = items;
+    }
+
+    public PageResult(long total, int pageIndex, int pageSize, List<T> items, string? nextCursor)
+        : this(total, pageIndex, pageSize, items)
+    {
+        NextCursor = nextCursor;
     }
 }

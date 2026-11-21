@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+﻿import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useLockStore } from '@/stores/lock';
 import { useWatermarkStore } from '@/stores/watermark';

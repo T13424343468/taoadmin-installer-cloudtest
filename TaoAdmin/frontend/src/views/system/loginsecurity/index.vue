@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-card title="登录安全" style="max-width: 640px; margin: 0 auto">
     <template #extra><span style="color: #999">保存即生效，无需重启</span></template>
     <a-form layout="vertical" :model="form">

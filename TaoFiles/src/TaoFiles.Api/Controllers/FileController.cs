@@ -22,12 +22,12 @@ public class FileController(FileAppService svc, IFileStorageProvider storage) : 
         return Ok(new { code = 200, msg = "ok", data = result });
     }
 
-    /// <summary>文件分页列表</summary>
+    /// <summary>文件分页列表（cursor=上一页 nextCursor 时走游标深翻页）</summary>
     [HttpGet("/api/files")]
     public async Task<IActionResult> Page([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10,
-        [FromQuery] string? keyword = null, [FromQuery] string? source = null)
+        [FromQuery] string? keyword = null, [FromQuery] string? source = null, [FromQuery] string? cursor = null)
     {
-        var result = await svc.PageAsync(Math.Max(pageIndex, 1), Math.Min(Math.Max(pageSize, 1), 100), keyword, source);
+        var result = await svc.PageAsync(Math.Max(pageIndex, 1), Math.Min(Math.Max(pageSize, 1), 100), keyword, source, cursor);
         return Ok(new { code = 200, msg = "ok", data = result });
     }
 

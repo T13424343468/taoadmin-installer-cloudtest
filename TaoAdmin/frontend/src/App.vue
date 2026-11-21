@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-config-provider :locale="zhCN" :theme="antTheme">
     <router-view />
   </a-config-provider>

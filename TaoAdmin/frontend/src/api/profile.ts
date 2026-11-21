@@ -1,4 +1,4 @@
-import { request } from './request';
+﻿import { request } from './request';
 
 /** 我的资料（个人中心展示与编辑） */
 export interface ProfileInfo {

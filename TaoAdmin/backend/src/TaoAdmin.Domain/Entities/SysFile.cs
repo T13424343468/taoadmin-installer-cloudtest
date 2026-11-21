@@ -8,6 +8,8 @@ namespace TaoAdmin.Domain.Entities;
 /// 业务系统保存 FileUrl（相对路径），拼接网关域名即可访问。
 /// </summary>
 [SugarTable("sys_file", TableDescription = "文件记录")]
+[SugarIndex("idx_file_created_id", nameof(BaseEntity.CreatedAt), OrderByType.Asc, nameof(BaseEntity.Id), OrderByType.Desc)]
+[SugarIndex("idx_file_name", nameof(FileName), OrderByType.Asc)]
 public class SysFile : BaseEntity, TaoAdmin.Common.Entities.ITenantEntity
 {
     /// <summary>原文件名（仅作展示，不用于磁盘存储）</summary>

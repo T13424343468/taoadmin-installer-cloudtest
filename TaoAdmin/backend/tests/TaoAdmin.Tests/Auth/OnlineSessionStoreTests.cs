@@ -1,4 +1,4 @@
-using TaoAdmin.Common.Auth;
+﻿using TaoAdmin.Common.Auth;
 using Xunit;
 
 namespace TaoAdmin.Tests.Auth;

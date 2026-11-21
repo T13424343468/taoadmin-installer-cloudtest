@@ -58,12 +58,16 @@ export interface FileItem {
 export interface FilePage {
   total: number;
   list: FileItem[];
+  /** 下一页游标（亿级深翻页用；为空表示没有下一页） */
+  nextCursor?: string | null;
 }
 
 export async function listFiles(params: {
   pageIndex: number;
   pageSize: number;
   keyword?: string;
+  /** 上一页返回的游标：带上后走游标翻页，深翻页恒定速度 */
+  cursor?: string;
 }): Promise<FilePage> {
   return fcRequest<FilePage>({ method: 'GET', url: '/api/files', params });
 }

@@ -1,4 +1,4 @@
-using TaoAdmin.Application.Services;
+﻿using TaoAdmin.Application.Services;
 using TaoAdmin.Common.Auth;
 using TaoAdmin.Common.Http;
 using TaoAdmin.Common.Web;
@@ -52,14 +52,15 @@ public class AuditController : BaseApiController
         return ApiOk("保存成功");
     }
 
-    /// <summary>分页查询审计日志（类别/账号/结果/时间区间筛选，仅审计管理员）</summary>
+    /// <summary>分页查询审计日志（类别/账号/结果/时间区间筛选，仅审计管理员；cursor=上一页 NextCursor 时走游标深翻页）</summary>
     [HttpGet("log")]
     [Permission("sys:audit:manage")]
     public async Task<ApiResult<object>> Logs([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20,
         [FromQuery] string? category = null, [FromQuery] string? userName = null,
-        [FromQuery] int? success = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null)
+        [FromQuery] int? success = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null,
+        [FromQuery] string? cursor = null)
     {
-        var page = await _logs.PageAsync(pageIndex, pageSize, category, userName, success, begin, end);
+        var page = await _logs.PageAsync(pageIndex, pageSize, category, userName, success, begin, end, cursor);
         return ApiOk<object>(page);
     }
 

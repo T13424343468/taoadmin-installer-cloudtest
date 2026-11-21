@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using TaoAdmin.Common.Auth;
 using Xunit;
