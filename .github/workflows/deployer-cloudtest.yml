@@ -67,14 +67,29 @@ jobs:
           dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
       - name: E2E deploy (native route, real run via headless mode)
+        timeout-minutes: 45
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe' `
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          $hlog = 'TaoAdmin/deploy/windows/deployer-headless.log'
+          $p = Start-Process -FilePath $exe `
             -ArgumentList '--deploy','--route','native','--yes' `
             -RedirectStandardOutput 'deployer-out.log' -RedirectStandardError 'deployer-err.log' `
-            -PassThru -Wait -NoNewWindow
-          Get-Content 'deployer-out.log' | ForEach-Object { Write-Host $_ }
-          Get-Content 'deployer-err.log' | ForEach-Object { Write-Host "ERR: $_" }
+            -PassThru
+          $shown = 0
+          while (-not $p.HasExited) {
+            Start-Sleep -Seconds 15
+            if (Test-Path $hlog) {
+              $lines = @(Get-Content $hlog)
+              if ($lines.Count -gt $shown) {
+                $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
+                $shown = $lines.Count
+              }
+            }
+          }
+          if (Test-Path $hlog) { @(Get-Content $hlog) | ForEach-Object { Write-Host "  | $_" } }
+          Get-Content 'deployer-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
+          Get-Content 'deployer-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
           if ($p.ExitCode -ne 0) { throw "deployer exit code $($p.ExitCode)" }
       - name: Verify endpoints (5 services)
         shell: pwsh
@@ -89,13 +104,29 @@ jobs:
             Write-Host "OK $u"
           }
       - name: E2E uninstall (must be clean)
+        timeout-minutes: 20
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe' `
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          $hlog = 'TaoAdmin/deploy/windows/deployer-headless.log'
+          $p = Start-Process -FilePath $exe `
             -ArgumentList '--uninstall','--yes' `
             -RedirectStandardOutput 'uninstall-out.log' -RedirectStandardError 'uninstall-err.log' `
-            -PassThru -Wait -NoNewWindow
-          Get-Content 'uninstall-out.log' | ForEach-Object { Write-Host $_ }
+            -PassThru
+          $shown = 0
+          while (-not $p.HasExited) {
+            Start-Sleep -Seconds 10
+            if (Test-Path $hlog) {
+              $lines = @(Get-Content $hlog)
+              if ($lines.Count -gt $shown) {
+                $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
+                $shown = $lines.Count
+              }
+            }
+          }
+          if (Test-Path $hlog) { @(Get-Content $hlog) | ForEach-Object { Write-Host "  | $_" } }
+          Get-Content 'uninstall-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
+          Get-Content 'uninstall-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
           if ($p.ExitCode -ne 0) { throw "uninstaller exit code $($p.ExitCode)" }
       - name: Assert uninstall cleanliness (ports free, artifacts gone, source intact)
         shell: pwsh

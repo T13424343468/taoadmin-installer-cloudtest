@@ -5,6 +5,7 @@
 //   TaoAdminDeployer.exe --status
 namespace TaoAdmin.Deployer.App;
 
+using System.IO;
 using TaoAdmin.Deployer.Core;
 
 public static class HeadlessRunner
@@ -15,45 +16,72 @@ public static class HeadlessRunner
     {
         // WinExe has no console; attach to the parent console so CI captures output.
         TryAttachConsole();
+        // Rebind stdout explicitly: AttachConsole can leave the handle stale, and CI
+        // redirection must never depend on console attachment. Everything is also
+        // teed to deployer-headless.log so a run is always diagnosable.
+        try { Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true }); } catch { }
+        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
+        using var fileLog = OpenFileLog();
+
+        void Tee(string line)
+        {
+            Console.WriteLine(line);
+            fileLog?.WriteLine(line);
+        }
 
         try
         {
             var paths = DeployPaths.FromExecutable(Environment.ProcessPath ?? AppContext.BaseDirectory);
             var engine = new DeployEngine(paths, BuildOptions(args));
-            engine.Log = l => Console.WriteLine("[LOG] " + l);
-            engine.StepOutput = (_, line) => Console.WriteLine("      " + line);
+            engine.Log = l => Tee("[LOG] " + l);
+            engine.StepOutput = (_, line) => Tee("      " + line);
 
             if (args.Contains("--status"))
             {
                 var s = engine.Status();
                 foreach (var i in s.Items)
-                    Console.WriteLine($"  {i.Name,-16} {(i.Running ? "运行中" : "未运行")}");
+                    Tee($"  {i.Name,-16} {(i.Running ? "运行中" : "未运行")}");
                 foreach (var c in s.Containers)
-                    Console.WriteLine("  容器: " + c);
+                    Tee("  容器: " + c);
                 ExitCode = 0;
                 return;
             }
 
             if (args.Contains("--uninstall"))
             {
-                engine.UninstallAsync(CancellationToken.None).GetAwaiter().GetResult();
+                // Run on the thread pool: blocking the WPF dispatcher thread with
+                // GetResult() deadlocks every async continuation that resumes on it.
+                Task.Run(() => engine.UninstallAsync(CancellationToken.None)).GetAwaiter().GetResult();
                 ExitCode = 0;
                 return;
             }
 
             // --deploy
-            engine.DeployAsync(CancellationToken.None).GetAwaiter().GetResult();
+            Task.Run(() => engine.DeployAsync(CancellationToken.None)).GetAwaiter().GetResult();
             ExitCode = 0;
         }
         catch (RebootRequiredException ex)
         {
-            Console.WriteLine("[REBOOT_REQUIRED] " + ex.Message);
+            Tee("[REBOOT_REQUIRED] " + ex.Message);
             ExitCode = 3; // reboot required
         }
         catch (Exception ex)
         {
-            Console.WriteLine("[FAILED] " + ex.Message);
+            Tee("[FAILED] " + ex.Message);
             ExitCode = 1;
+        }
+    }
+
+    private static StreamWriter? OpenFileLog()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "deployer-headless.log");
+            return new StreamWriter(path, append: false, System.Text.Encoding.UTF8) { AutoFlush = true };
+        }
+        catch
+        {
+            return null; // read-only dir etc. — console output still works
         }
     }
 
@@ -79,10 +107,5 @@ public static class HeadlessRunner
         {
             // No parent console (double-clicked) — output goes to the log file only.
         }
-        try
-        {
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-        }
-        catch { }
     }
 }
