@@ -582,6 +582,16 @@ public sealed class DeployEngine
         // Refresh PATH from machine so the fresh install is visible.
         RefreshPathFromMachine();
 
+        // WSL prerequisite: Docker Desktop (WSL2 backend) cannot start without it.
+        // Detect it BEFORE launching Docker Desktop so the user never sees the
+        // "WSL not installed" dialog; enable the features and request a reboot right away.
+        var wslProbe = await ProcessRunner.RunAsync("wsl.exe", "--status", onLine: Out, ct: ct);
+        if (!wslProbe.Success)
+        {
+            L("检测到缺少 WSL 组件（Docker 运行的前提）——先启用系统功能并安装，随后需要重启一次……");
+            await EnableVirtualizationAndRequestReboot(ct);
+        }
+
         L("启动 Docker Desktop 并等待引擎就绪（首次启动最长等 5 分钟）……");
         var dd = @"C:\Program Files\Docker\Docker\Docker Desktop.exe";
         if (File.Exists(dd)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dd) { UseShellExecute = true });
