@@ -759,7 +759,16 @@ public sealed class DeployEngine
         L("容器路线：docker compose 一键拉起全部服务……");
         var r = await ProcessRunner.RunAsync("docker", "compose up -d", workingDirectory: _p.ComposeDir, onLine: Out, ct: ct);
         if (!r.Success)
-            throw new InvalidOperationException($"docker compose up 失败（exit={r.ExitCode}）");
+        {
+            // Surface the real reason (pull failure, build error, port conflict…)
+            // on the fail page instead of a bare exit code.
+            var tail = string.Join(" | ", r.Output
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .TakeLast(4)
+                .Select(l => l.Trim()));
+            var detail = tail.Length > 0 ? "：" + tail : "（无输出，常见原因：网络拉不动镜像或 compose 文件缺失，详见日志）";
+            throw new InvalidOperationException($"docker compose up 失败（exit={r.ExitCode}）{detail}");
+        }
     }
 
     private async Task StepDockerHealth(CancellationToken ct)
