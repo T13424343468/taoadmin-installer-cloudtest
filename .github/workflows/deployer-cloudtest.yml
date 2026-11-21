@@ -80,7 +80,7 @@ jobs:
             Write-Host ("process: PID={0} Title='{1}' Responding={2}" -f $p.Id, $p.MainWindowTitle, $p.Responding)
             dotnet tool install -g dotnet-dump 2>&1 | Out-Null
             $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-            dotnet-dump collect -p $p.Id -o deployer-hang.dmp --timeout 300 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
+            dotnet-dump collect -p $p.Id -o deployer-hang.dmp 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
             if (Test-Path 'deployer-hang.dmp') {
               dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" "quit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
             }
@@ -129,7 +129,7 @@ jobs:
               }
               dotnet tool install -g dotnet-dump --version 9.0.641601 2>&1 | Out-Null
               $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-              dotnet-dump collect -p $p.Id -o deployer-hang.dmp --timeout 300 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
+              dotnet-dump collect -p $p.Id -o deployer-hang.dmp 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
               if (Test-Path 'deployer-hang.dmp') {
                 dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" "quit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
               }
