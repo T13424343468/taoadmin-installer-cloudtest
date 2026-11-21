@@ -32,8 +32,14 @@ jobs:
       - name: Publish self-contained single-file exe
         shell: pwsh
         run: |
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo -bl:publish.binlog
+          # Publish OUTSIDE the repo tree: -o pointing at (or above) the project dir makes
+          # the SDK add PublishDir/** to DefaultItemExcludes, which silently excludes ALL
+          # source files and produces an empty assembly. Runner temp is always safe.
+          $out = "$env:RUNNER_TEMP/deployer-out"
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o $out --nologo -bl:publish.binlog
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+          Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
+          Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
           Copy-Item publish.binlog "$env:GITHUB_WORKSPACE/publish.binlog" -ErrorAction SilentlyContinue
           $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
           if (-not (Test-Path $exe)) { throw 'published exe missing' }
@@ -91,8 +97,12 @@ jobs:
       - name: Publish deployer exe
         shell: pwsh
         run: |
-          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
+          # Same rule as build-test: never publish to a directory at/above the project dir.
+          $out = "$env:RUNNER_TEMP/deployer-out"
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o $out --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+          Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
+          Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
       - name: Diagnose e2e assembly contents
         shell: pwsh
         run: |
