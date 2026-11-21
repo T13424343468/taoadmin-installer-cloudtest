@@ -132,10 +132,39 @@ function Select-Route {
 }
 
 # ---------------- Docker 路线 ----------------
+function Wait-DockerEngine {
+  # 等待 Docker 引擎就绪（最长 5 分钟），返回 $true/$false
+  param([int]$MaxSeconds = 300)
+  $deadline = (Get-Date).AddSeconds($MaxSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+      docker info 2>$null | Out-Null
+      if ($LASTEXITCODE -eq 0) { return $true }
+    }
+    Start-Sleep -Seconds 5
+  }
+  return $false
+}
+
+function Start-DockerDesktopApp {
+  $dd = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+  if (Test-Path $dd) { Start-Process -FilePath $dd }
+}
+
 function Install-DockerDesktop {
   if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Write-Log '检测到 docker 命令，跳过 Docker Desktop 安装'
-    return
+    # docker CLI 存在不代表引擎在跑（刚装完/刚重启都可能没起来），必须实测引擎
+    docker info 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      Write-Log '检测到 Docker 引擎已在运行，跳过安装'
+      return
+    }
+    Write-Log '检测到 docker 命令，但引擎未运行——启动 Docker Desktop 并等待就绪……'
+    if (-not $DryRun) {
+      Start-DockerDesktopApp
+      if (Wait-DockerEngine) { Write-Log 'Docker 引擎已就绪'; return }
+      throw 'Docker 引擎 5 分钟内未就绪。若刚安装完 Docker Desktop，请先重启电脑（启用虚拟机平台必须重启），再重跑本脚本（自动续跑）'
+    } else { Write-Host '  [DryRun] 将启动 Docker Desktop 并等待引擎就绪'; return }
   }
   Write-Log '未检测到 Docker Desktop，开始自动安装……'
   if (-not $DryRun -and -not (Test-Admin)) {
@@ -173,17 +202,8 @@ function Install-DockerDesktop {
   if ($machinePath) { $env:PATH = "$env:PATH;$machinePath" }
   Write-Log '启动 Docker Desktop 并等待引擎就绪（首次启动最长等 5 分钟）……'
   if (-not $DryRun) {
-    $dd = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
-    if (Test-Path $dd) { Start-Process -FilePath $dd }
-    $ok = $false
-    for ($i = 1; $i -le 60; $i++) {
-      if (Get-Command docker -ErrorAction SilentlyContinue) {
-        docker info 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-      }
-      Start-Sleep -Seconds 5
-    }
-    if (-not $ok) { throw 'Docker 引擎未就绪。若系统提示需启用 WSL2/虚拟化或重启，请处理后重跑本脚本（自动续跑）' }
+    Start-DockerDesktopApp
+    if (-not (Wait-DockerEngine)) { throw 'Docker 引擎未就绪。若系统提示需启用 WSL2/虚拟化或重启，请处理后重跑本脚本（自动续跑）' }
   } else { Write-Host '  [DryRun] 将等待 Docker 引擎就绪' }
   # 全新安装的 Docker Desktop 默认 Windows 容器模式；本套件镜像均为 Linux 镜像，必须切换
   if (-not $DryRun) {

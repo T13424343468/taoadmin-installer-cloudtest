@@ -1,0 +1,126 @@
+name: deployer-cloudtest
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'TaoAdmin/deploy/windows/TaoAdminDeployer/**'
+      - '.github/workflows/deployer-cloudtest.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deployer-build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build core + app (0 error 0 warning gate)
+        shell: pwsh
+        run: |
+          dotnet build TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.Core/Deployer.Core.csproj -v q --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'core build failed' }
+          dotnet build TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -v q --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'app build failed' }
+      - name: Unit tests
+        shell: pwsh
+        run: |
+          dotnet test TaoAdmin/deploy/windows/TaoAdminDeployer/tests/Deployer.Core.Tests/Deployer.Core.Tests.csproj --nologo -v q
+          if ($LASTEXITCODE -ne 0) { throw 'unit tests failed' }
+      - name: Publish self-contained single-file exe
+        shell: pwsh
+        run: |
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          if (-not (Test-Path $exe)) { throw 'published exe missing' }
+          $mb = [int]((Get-Item $exe).Length / 1MB)
+          Write-Host "published exe size: $mb MB"
+          if ($mb -lt 20) { throw "published exe suspiciously small: $mb MB" }
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployer-exe
+          path: TaoAdmin/deploy/windows/TaoAdminDeployer.exe
+
+  deployer-e2e-native:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Stop preinstalled MySQL
+        shell: pwsh
+        run: |
+          Get-Service | Where-Object { $_.Name -like 'MySQL*' } | ForEach-Object {
+            Write-Host "stopping $($_.Name)"
+            Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
+          }
+      - name: Publish deployer exe
+        shell: pwsh
+        run: |
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+      - name: E2E deploy (native route, real run via headless mode)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe' `
+            -ArgumentList '--deploy','--route','native','--yes' `
+            -RedirectStandardOutput 'deployer-out.log' -RedirectStandardError 'deployer-err.log' `
+            -PassThru -Wait -NoNewWindow
+          Get-Content 'deployer-out.log' | ForEach-Object { Write-Host $_ }
+          Get-Content 'deployer-err.log' | ForEach-Object { Write-Host "ERR: $_" }
+          if ($p.ExitCode -ne 0) { throw "deployer exit code $($p.ExitCode)" }
+      - name: Verify endpoints (5 services)
+        shell: pwsh
+        run: |
+          foreach ($u in 'http://127.0.0.1:5000/health','http://127.0.0.1:5001/health','http://127.0.0.1:5002/health','http://127.0.0.1:5003/health','http://127.0.0.1:8080/') {
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try { $r = Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 5; if ($r.StatusCode -lt 500) { $ok = $true; break } } catch {}
+              Start-Sleep -Seconds 4
+            }
+            if (-not $ok) { throw "endpoint not ready: $u" }
+            Write-Host "OK $u"
+          }
+      - name: E2E uninstall (must be clean)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe' `
+            -ArgumentList '--uninstall','--yes' `
+            -RedirectStandardOutput 'uninstall-out.log' -RedirectStandardError 'uninstall-err.log' `
+            -PassThru -Wait -NoNewWindow
+          Get-Content 'uninstall-out.log' | ForEach-Object { Write-Host $_ }
+          if ($p.ExitCode -ne 0) { throw "uninstaller exit code $($p.ExitCode)" }
+      - name: Assert uninstall cleanliness (ports free, artifacts gone, source intact)
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 3
+          foreach ($port in 5000,5001,5002,5003,8080,3306,6379) {
+            $listening = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            if ($listening) { throw "port $port still listening after uninstall" }
+            Write-Host "port $port free"
+          }
+          foreach ($dir in 'TaoAdmin/deploy/publish','TaoAdmin/deploy/windows/runtime','TaoAdmin/frontend/node_modules','TaoAdmin/frontend/dist') {
+            if (Test-Path $dir) { throw "artifact still present: $dir" }
+            Write-Host "removed: $dir"
+          }
+          if (-not (Test-Path 'TaoAdmin/backend/src')) { throw 'source code must be kept' }
+          if (-not (Test-Path 'TaoAdmin/deploy/sql/tao_admin_init.sql')) { throw 'source sql must be kept' }
+          Write-Host 'uninstall cleanliness: PASS'
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployer-e2e-logs
+          path: |
+            deployer-out.log
+            deployer-err.log
+            uninstall-out.log
+            uninstall-err.log
+            TaoAdmin/deploy/windows/runtime/logs/
