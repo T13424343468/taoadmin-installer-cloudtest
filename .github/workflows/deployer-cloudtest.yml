@@ -74,6 +74,17 @@ jobs:
           $p = Start-Process -FilePath $exe -ArgumentList '--status' `
             -RedirectStandardOutput 'status-out.log' -RedirectStandardError 'status-err.log' -PassThru
           $exited = $p.WaitForExit(120000)
+          if (-not $exited) {
+            Write-Host "!! --status alive after 2 min — capturing hang dump"
+            $p.Refresh()
+            Write-Host ("process: PID={0} Title='{1}' Responding={2}" -f $p.Id, $p.MainWindowTitle, $p.Responding)
+            dotnet tool install -g dotnet-dump 2>&1 | Out-Null
+            $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+            dotnet-dump collect -p $p.Id -o deployer-hang.dmp --timeout 300 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
+            if (Test-Path 'deployer-hang.dmp') {
+              dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" "quit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
+            }
+          }
           try {
             Get-Content 'status-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
             Get-Content 'status-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
