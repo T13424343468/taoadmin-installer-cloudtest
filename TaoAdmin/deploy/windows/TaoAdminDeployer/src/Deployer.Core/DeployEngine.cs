@@ -341,7 +341,7 @@ public sealed class DeployEngine
             L($"编译后端: {proj} ……");
             var r = await ProcessRunner.RunAsync(
                 dotnetExe,
-                $"publish \"{DeployPaths.Join(_p.Root, "backend", "src", proj)}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", outDir)}\" --nologo",
+                $"publish -nr:false \"{DeployPaths.Join(_p.Root, "backend", "src", proj)}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", outDir)}\" --nologo",
                 onLine: Out, ct: ct);
             var errCount = r.Output.Count(l => l.Contains(": error "));
             if (!r.Success || errCount > 0)
@@ -356,7 +356,7 @@ public sealed class DeployEngine
             tfProj = DeployPaths.Join(_p.Root, "..", "TaoFiles", "src", "TaoFiles.Api");
         var rf = await ProcessRunner.RunAsync(
             dotnetExe,
-            $"publish \"{tfProj}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", "taofiles")}\" --nologo",
+            $"publish -nr:false \"{tfProj}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", "taofiles")}\" --nologo",
             onLine: Out, ct: ct);
         var errF = rf.Output.Count(l => l.Contains(": error "));
         if (!rf.Success || errF > 0)
@@ -743,6 +743,10 @@ public sealed class DeployEngine
         await Net.Ports.WaitPortsClosedAsync(
             new[] { 5000, 5001, 5002, 5003, 8080, 3306, 6379 }, TimeSpan.FromSeconds(20), ct);
 
+        // 2.5) Kill lingering build/worker processes running from the runtime dir
+        // (e.g. MSBuild node-reuse workers holding dotnet.exe open).
+        KillProcessesUnder(_p.RuntimeDir);
+
         // 3) Delete artifacts and runtimes (source code is kept).
         var targets = new List<(string Path, string Desc)>
         {
@@ -775,6 +779,26 @@ public sealed class DeployEngine
         L("卸载完成：服务已停止，部署产物/运行时/数据库数据/状态已清除，源码完整保留。");
         if (_opt.KeepRuntimes) L("（按要求保留了运行时，重装会快很多）");
         await Task.CompletedTask;
+    }
+
+    private void KillProcessesUnder(string dir)
+    {
+        if (!OperatingSystem.IsWindows() || !Directory.Exists(dir)) return;
+        var prefix = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("dotnet"))
+        {
+            try
+            {
+                var path = proc.MainModule?.FileName;
+                if (string.IsNullOrEmpty(path) ||
+                    !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                proc.Kill(entireProcessTree: true);
+                try { proc.WaitForExit(5000); } catch { }
+                L($"已停止运行时目录内的进程（PID {proc.Id}）");
+            }
+            catch { }
+        }
     }
 
     private void StopByPidFiles()
