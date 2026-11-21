@@ -11,6 +11,7 @@
     <RootNamespace>TaoAdmin.Deployer.App</RootNamespace>
     <Version>1.0.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>appicon.ico</ApplicationIcon>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Self-contained single-file: runs on machines without any .NET installed (foolproof). -->

@@ -290,9 +290,36 @@ public sealed class DeployEngine
         }
         else
         {
+            // 3306 is occupied — make sure it is OUR portable instance, not the
+            // user's own MySQL. Touching a foreign MySQL could rewrite its root
+            // password or pollute its data during db-init, so fail fast clearly.
+            if (!IsOurMysqldRunning())
+                throw new InvalidOperationException(
+                    "检测到 3306 端口被其他 MySQL 占用（可能是您自行安装的 MySQL 服务）。" +
+                    "为避免改动您现有数据库的口令和数据，请先停止该 MySQL 服务（服务名通常为 MySQL 或 MySQL80），" +
+                    "再重新运行部署器；或将其卸载/改端口后重试。");
             L("MySQL 已在运行（3306），跳过启动");
         }
         L("MySQL 就绪");
+    }
+
+    private bool IsOurMysqldRunning()
+    {
+        if (!OperatingSystem.IsWindows()) return true;
+        var prefix = Path.GetFullPath(_p.RuntimeDir).TrimEnd(Path.DirectorySeparatorChar)
+                     + Path.DirectorySeparatorChar;
+        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("mysqld"))
+        {
+            try
+            {
+                var path = proc.MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path) &&
+                    path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch { }
+        }
+        return false;
     }
 
     private async Task StepRedis(CancellationToken ct)
@@ -371,9 +398,9 @@ public sealed class DeployEngine
         var feDir = _p.FrontendDir;
         L("安装前端依赖（npm install，首次较慢）……");
 
-        async Task<bool> TryInstallBuild()
+        async Task<bool> TryInstallBuild(string registryArg = "")
         {
-            var r1 = await ProcessRunner.RunAsync(npmCmd, "install --no-audit --no-fund", workingDirectory: feDir, onLine: Out, ct: ct);
+            var r1 = await ProcessRunner.RunAsync(npmCmd, $"install --no-audit --no-fund{registryArg}", workingDirectory: feDir, onLine: Out, ct: ct);
             if (!r1.Success) return false;
             var r2 = await ProcessRunner.RunAsync(npmCmd, "run build", workingDirectory: feDir, onLine: Out, ct: ct);
             return r2.Success;
@@ -385,8 +412,10 @@ public sealed class DeployEngine
             L("前端构建首次失败，清理 node_modules 与 lock 后重装重试……");
             TryDeleteDir(DeployPaths.Join(feDir, "node_modules"));
             TryDeleteFile(DeployPaths.Join(feDir, "package-lock.json"));
-            if (!await TryInstallBuild())
-                throw new InvalidOperationException("前端构建失败（重试后仍失败）");
+            // Same fallback the Dockerfile uses: retry against the npmmirror registry
+            // for slow/blocked international network conditions.
+            if (!await TryInstallBuild(" --registry=https://registry.npmmirror.com"))
+                throw new InvalidOperationException("前端构建失败（重试后仍失败，已尝试国内镜像源）");
         }
 
         var distIndex = DeployPaths.Join(feDir, "dist", "index.html");
@@ -585,8 +614,7 @@ public sealed class DeployEngine
         // WSL prerequisite: Docker Desktop (WSL2 backend) cannot start without it.
         // Detect it BEFORE launching Docker Desktop so the user never sees the
         // "WSL not installed" dialog; enable the features and request a reboot right away.
-        var wslProbe = await ProcessRunner.RunAsync("wsl.exe", "--status", onLine: Out, ct: ct);
-        if (!wslProbe.Success)
+        if (!await WslStatusOkAsync(ct))
         {
             L("检测到缺少 WSL 组件（Docker 运行的前提）——先启用系统功能并安装，随后需要重启一次……");
             await EnableVirtualizationAndRequestReboot(ct);
@@ -632,11 +660,27 @@ public sealed class DeployEngine
         catch { }
     }
 
+    private async Task<bool> WslStatusOkAsync(CancellationToken ct)
+    {
+        // wsl.exe itself may be absent on older Win10 — Process.Start would throw
+        // Win32Exception instead of returning a failure result. Treat any probe
+        // failure (missing exe, non-zero exit) as "WSL not installed".
+        try
+        {
+            var r = await ProcessRunner.RunAsync("wsl.exe", "--status", onLine: Out, ct: ct);
+            return r.Success;
+        }
+        catch (Exception ex)
+        {
+            L($"WSL 检测不可用（{ex.Message}），按未安装处理");
+            return false;
+        }
+    }
+
     private async Task EnableVirtualizationAndRequestReboot(CancellationToken ct)
     {
         L("检测系统虚拟化功能状态……");
-        var wsl = await ProcessRunner.RunAsync("wsl.exe", "--status", onLine: Out, ct: ct);
-        var wslOk = wsl.Success;
+        var wslOk = await WslStatusOkAsync(ct);
         if (wslOk)
         {
             // Engine still not up after 5 min with WSL present — likely needs reboot after feature enable.
@@ -720,7 +764,7 @@ public sealed class DeployEngine
 
     private async Task StepDockerHealth(CancellationToken ct)
     {
-        L("等待健康检查（网关/文件中心/前端，每项最多等 2 分钟）……");
+        L("等待健康检查（网关/文件中心/前端，每项最多等 5 分钟）……");
         var targets = new List<(string Name, string Url)>
         {
             ("网关", "http://127.0.0.1:5000/health"),
@@ -729,7 +773,9 @@ public sealed class DeployEngine
         };
         foreach (var (name, url) in targets)
         {
-            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(2), ct))
+            // 5 min each: first boot on an 8GB machine pulls/starts Nacos+ES-backed
+            // services, and 2 min was too tight for the gateway to come up.
+            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(5), ct))
                 throw new InvalidOperationException($"容器路线健康检查未通过: {name}（{url}）");
             L($"健康检查通过: {name}");
         }
