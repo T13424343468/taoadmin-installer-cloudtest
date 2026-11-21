@@ -756,6 +756,9 @@ public sealed class DeployEngine
 
     private async Task StepComposeUp(CancellationToken ct)
     {
+        // Domestic registry mirrors so image pulls never depend on a VPN.
+        // Covers compose images AND Dockerfile FROM layers (all docker.io).
+        EnsureDockerMirrorConfig(ct);
         L("容器路线：docker compose 一键拉起全部服务……");
         var r = await ProcessRunner.RunAsync("docker", "compose up -d", workingDirectory: _p.ComposeDir, onLine: Out, ct: ct);
         if (!r.Success)
@@ -769,6 +772,73 @@ public sealed class DeployEngine
             var detail = tail.Length > 0 ? "：" + tail : "（无输出，常见原因：网络拉不动镜像或 compose 文件缺失，详见日志）";
             throw new InvalidOperationException($"docker compose up 失败（exit={r.ExitCode}）{detail}");
         }
+    }
+
+    private static readonly string[] DockerMirrors =
+    {
+        "https://docker.xuanyuan.me",
+        "https://docker.1ms.run",
+        "https://docker.m.daocloud.io",
+    };
+
+    private void EnsureDockerMirrorConfig(CancellationToken ct)
+    {
+        var daemonPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".docker", "daemon.json");
+        try
+        {
+            var json = File.Exists(daemonPath) ? File.ReadAllText(daemonPath) : "{}";
+            var node = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject
+                       ?? new System.Text.Json.Nodes.JsonObject();
+
+            var existing = new List<string>();
+            if (node["registry-mirrors"] is System.Text.Json.Nodes.JsonArray arr)
+                foreach (var t in arr)
+                    if (t is not null) existing.Add(t.GetValue<string>());
+
+            if (existing.Any(e => DockerMirrors.Contains(e, StringComparer.OrdinalIgnoreCase)))
+            {
+                L("Docker 镜像加速源已配置，跳过");
+                return;
+            }
+
+            var merged = new System.Text.Json.Nodes.JsonArray();
+            foreach (var m in DockerMirrors) merged.Add(m);
+            foreach (var e in existing.Where(e => !DockerMirrors.Contains(e, StringComparer.OrdinalIgnoreCase)))
+                merged.Add(e);
+            node["registry-mirrors"] = merged;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(daemonPath)!);
+            File.WriteAllText(daemonPath, node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            L("已写入国内镜像加速源（轩辕/毫秒/DaoCloud），重启 Docker 使其生效……");
+            RestartDockerForMirror(ct);
+        }
+        catch (Exception ex)
+        {
+            L($"[WARN] 镜像加速源配置未完成：{ex.Message}（不阻断部署；如拉取仍失败，可在 Docker Desktop 设置中手动配置）");
+        }
+    }
+
+    private void RestartDockerForMirror(CancellationToken ct)
+    {
+        foreach (var name in new[] { "Docker Desktop", "com.docker.backend", "docker" })
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName(name))
+                {
+                    p.Kill(entireProcessTree: true);
+                    p.Dispose();
+                }
+            }
+            catch { }
+        Thread.Sleep(3000);
+        var dd = @"C:\Program Files\Docker\Docker\Docker Desktop.exe";
+        if (File.Exists(dd))
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dd) { UseShellExecute = true });
+        var ready = Net.Ports.WaitDockerEngineAsync(TimeSpan.FromMinutes(5), ct).GetAwaiter().GetResult();
+        if (!ready)
+            throw new InvalidOperationException("配置镜像加速后 Docker 引擎未恢复（5 分钟超时），请手动启动 Docker Desktop 后重试");
+        L("Docker 引擎已恢复，加速源生效");
     }
 
     private async Task StepDockerHealth(CancellationToken ct)
