@@ -316,7 +316,7 @@ public sealed class DeployEngine
             {
                 try { await started; } catch { }
             }, CancellationToken.None);
-            var ok = await Net.Ports.WaitPortOpenAsync(6379, TimeSpan.FromSeconds(30), ct);
+            var ok = await Net.Ports.WaitPortOpenAsync(6379, TimeSpan.FromSeconds(90), ct);
             if (!ok) throw new InvalidOperationException("Redis 端口 6379 未就绪");
         }
         else

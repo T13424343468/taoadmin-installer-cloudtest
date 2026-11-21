@@ -8,8 +8,9 @@ public static class Ports
         try
         {
             using var c = new System.Net.Sockets.TcpClient();
-            var t = c.ConnectAsync("127.0.0.1", port);
-            if (!t.Wait(500)) return false;
+            // IPAddress.Loopback: skip DNS resolution entirely; generous window for busy machines.
+            var t = c.ConnectAsync(System.Net.IPAddress.Loopback, port);
+            if (!t.Wait(2000)) return false;
             c.Close();
             return true;
         }
