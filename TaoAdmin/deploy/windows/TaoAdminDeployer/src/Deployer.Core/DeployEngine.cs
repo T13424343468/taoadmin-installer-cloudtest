@@ -40,6 +40,19 @@ public sealed class DeployOptions
 
 public sealed class DeployEngine
 {
+    // Windows-native tools (dism.exe) emit localized GBK output; everything else we run is UTF-8.
+    private static readonly System.Text.Encoding GbkOutput = CreateGbkEncoding();
+
+    private static System.Text.Encoding CreateGbkEncoding()
+    {
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            return System.Text.Encoding.GetEncoding(936);
+        }
+        catch { return System.Text.Encoding.UTF8; }
+    }
+
     private readonly DeployPaths _p;
     private readonly StateStore _state;
     private readonly DeployOptions _opt;
@@ -482,6 +495,8 @@ public sealed class DeployEngine
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
             };
             psi.EnvironmentVariables["DOTNET_ROOT"] = dotnetDir;
             var p = System.Diagnostics.Process.Start(psi)
@@ -503,6 +518,8 @@ public sealed class DeployEngine
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
             };
             psi.EnvironmentVariables["FRONTEND_DIST"] = DeployPaths.Join(_p.PublishDir, "frontend");
             var p = System.Diagnostics.Process.Start(psi)
@@ -689,8 +706,8 @@ public sealed class DeployEngine
         else
         {
             L("启用系统虚拟化功能（需要管理员权限）……");
-            await ProcessRunner.RunAsync("dism.exe", "/online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart", onLine: Out, ct: ct);
-            await ProcessRunner.RunAsync("dism.exe", "/online /enable-feature /featurename:VirtualMachinePlatform /all /norestart", onLine: Out, ct: ct);
+            await ProcessRunner.RunAsync("dism.exe", "/online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart", onLine: Out, outputEncoding: GbkOutput, ct: ct);
+            await ProcessRunner.RunAsync("dism.exe", "/online /enable-feature /featurename:VirtualMachinePlatform /all /norestart", onLine: Out, outputEncoding: GbkOutput, ct: ct);
             await ProcessRunner.RunAsync("wsl.exe", "--install --no-distribution", onLine: Out, ct: ct);
         }
         // Leave a marker so the app can greet the user with "continue after reboot".

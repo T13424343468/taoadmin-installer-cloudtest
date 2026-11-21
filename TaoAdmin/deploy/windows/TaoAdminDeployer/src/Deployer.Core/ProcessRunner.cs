@@ -39,6 +39,7 @@ public static class ProcessRunner
         string? workingDirectory = null,
         Action<string>? onLine = null,
         IDictionary<string, string?>? env = null,
+        System.Text.Encoding? outputEncoding = null,
         CancellationToken ct = default)
     {
         var output = new List<string>();
@@ -51,6 +52,11 @@ public static class ProcessRunner
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            // Real-machine pitfall: without an explicit encoding .NET decodes redirected
+            // output with the OEM code page (GBK on Chinese Windows), while docker/dotnet/npm
+            // emit UTF-8 — Chinese text in the fail-page tail turned into mojibake.
+            StandardOutputEncoding = outputEncoding ?? System.Text.Encoding.UTF8,
+            StandardErrorEncoding = outputEncoding ?? System.Text.Encoding.UTF8,
         };
         if (env != null)
         {
