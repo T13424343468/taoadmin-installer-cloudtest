@@ -88,7 +88,7 @@ jobs:
           try {
             Get-Content 'status-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
             Get-Content 'status-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
-            foreach ($f in 'TaoAdmin/deploy/windows/deployer-started.txt','TaoAdmin/deploy/windows/deployer-headless.log') {
+            foreach ($f in 'TaoAdmin/deploy/windows/deployer-started.txt',"$env:TEMP\deployer-started.txt",'TaoAdmin/deploy/windows/deployer-headless.log') {
               if (Test-Path $f) { Write-Host "--- $f ---"; Get-Content $f | ForEach-Object { Write-Host "  | $_" } }
               else { Write-Host "missing: $f" }
             }
