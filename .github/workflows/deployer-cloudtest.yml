@@ -39,6 +39,26 @@ jobs:
           $mb = [int]((Get-Item $exe).Length / 1MB)
           Write-Host "published exe size: $mb MB"
           if ($mb -lt 20) { throw "published exe suspiciously small: $mb MB" }
+      - name: Diagnose assembly contents
+        shell: pwsh
+        run: |
+          Write-Host "SDK in use: $(dotnet --version)"
+          Write-Host '--- source files:'
+          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -File -Include *.cs,*.xaml,*.csproj | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
+          Write-Host '--- built dlls:'
+          Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src -Recurse -Filter *.dll | ForEach-Object { Write-Host "$($_.Length)`t$($_.FullName)" }
+          $app = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/bin -Recurse -Filter 'TaoAdminDeployer.dll' | Select-Object -First 1
+          if ($app) {
+            $t = [System.Text.Encoding]::Unicode.GetString([System.IO.File]::ReadAllBytes($app.FullName))
+            if ($t.Contains('OnStartup entered')) { Write-Host 'APP DLL: HAS new code' } else { Write-Host 'APP DLL: MISSING new code' }
+          } else { Write-Host 'APP DLL not found under bin' }
+          $core = Get-ChildItem TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.Core/bin -Recurse -Filter 'TaoAdmin.Deployer.Core.dll' | Select-Object -First 1
+          if ($core) {
+            $t2 = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($core.FullName))
+            if ($t2.Contains('DeployEngine')) { Write-Host 'CORE DLL: HAS code' } else { Write-Host 'CORE DLL: EMPTY' }
+          } else { Write-Host 'CORE DLL not found under bin' }
+          Write-Host '--- publish output dir:'
+          Get-ChildItem TaoAdmin/deploy/windows -File | ForEach-Object { Write-Host "$($_.Length)`t$($_.Name)" }
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
