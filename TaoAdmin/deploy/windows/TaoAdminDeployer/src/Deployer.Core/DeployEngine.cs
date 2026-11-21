@@ -341,7 +341,7 @@ public sealed class DeployEngine
             L($"编译后端: {proj} ……");
             var r = await ProcessRunner.RunAsync(
                 dotnetExe,
-                $"publish -nr:false \"{DeployPaths.Join(_p.Root, "backend", "src", proj)}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", outDir)}\" --nologo",
+                $"publish -nr:false -p:UseSharedCompilation=false \"{DeployPaths.Join(_p.Root, "backend", "src", proj)}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", outDir)}\" --nologo",
                 onLine: Out, ct: ct);
             var errCount = r.Output.Count(l => l.Contains(": error "));
             if (!r.Success || errCount > 0)
@@ -356,7 +356,7 @@ public sealed class DeployEngine
             tfProj = DeployPaths.Join(_p.Root, "..", "TaoFiles", "src", "TaoFiles.Api");
         var rf = await ProcessRunner.RunAsync(
             dotnetExe,
-            $"publish -nr:false \"{tfProj}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", "taofiles")}\" --nologo",
+            $"publish -nr:false -p:UseSharedCompilation=false \"{tfProj}\" -c Release -o \"{DeployPaths.Join(_p.PublishDir, "backend", "taofiles")}\" --nologo",
             onLine: Out, ct: ct);
         var errF = rf.Output.Count(l => l.Contains(": error "));
         if (!rf.Success || errF > 0)
@@ -786,16 +786,18 @@ public sealed class DeployEngine
         if (!OperatingSystem.IsWindows() || !Directory.Exists(dir)) return;
         var prefix = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar)
                      + Path.DirectorySeparatorChar;
-        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("dotnet"))
+        foreach (var proc in System.Diagnostics.Process.GetProcesses())
         {
             try
             {
-                var path = proc.MainModule?.FileName;
+                string? path;
+                try { path = proc.MainModule?.FileName; } catch { continue; }
                 if (string.IsNullOrEmpty(path) ||
                     !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                var pname = proc.ProcessName;
                 proc.Kill(entireProcessTree: true);
                 try { proc.WaitForExit(5000); } catch { }
-                L($"已停止运行时目录内的进程（PID {proc.Id}）");
+                L($"已停止运行时目录内的进程 {pname}（PID {proc.Id}）");
             }
             catch { }
         }
