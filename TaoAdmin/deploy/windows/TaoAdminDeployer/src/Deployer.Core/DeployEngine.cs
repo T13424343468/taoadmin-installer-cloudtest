@@ -703,7 +703,11 @@ public sealed class DeployEngine
     private async Task<string> DockerOsType(CancellationToken ct)
     {
         var r = await ProcessRunner.RunAsync("docker", "info --format '{{.OSType}}'", onLine: null, ct: ct);
-        return r.Output.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim() ?? "unknown";
+        // Real-machine pitfall: depending on shell quoting the value can come back wrapped in
+        // quotes ("linux" / 'linux'). Strip them before comparing, or a Linux-mode engine is
+        // misread as unknown and the switcher needlessly toggles daemons.
+        var line = r.Output.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim() ?? "unknown";
+        return line.Trim('"', '\'').Trim();
     }
 
     private async Task StepComposeUp(CancellationToken ct)
