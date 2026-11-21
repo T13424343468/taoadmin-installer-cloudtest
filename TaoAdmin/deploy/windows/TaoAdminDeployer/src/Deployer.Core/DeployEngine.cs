@@ -1,4 +1,4 @@
-// DeployEngine: orchestrates every deployment step with full remediation.
+﻿// DeployEngine: orchestrates every deployment step with full remediation.
 // Ported from install-windows.ps1 (WIN-INSTALLER-V1/V8) and hardened:
 //   - every real-machine failure mode gets an automatic fix ("create the condition")
 //   - every step reports progress to the UI
