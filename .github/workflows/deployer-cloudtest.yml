@@ -73,10 +73,17 @@ jobs:
           $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
           $p = Start-Process -FilePath $exe -ArgumentList '--status' `
             -RedirectStandardOutput 'status-out.log' -RedirectStandardError 'status-err.log' -PassThru
-          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw 'deployer --status did not exit within 2 minutes — startup hang' }
-          Get-Content 'status-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
-          Get-Content 'status-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
-          if (Test-Path 'TaoAdmin/deploy/windows/deployer-started.txt') { Write-Host "--- breadcrumb ---"; Get-Content 'TaoAdmin/deploy/windows/deployer-started.txt' }
+          $exited = $p.WaitForExit(120000)
+          try {
+            Get-Content 'status-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
+            Get-Content 'status-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
+            foreach ($f in 'TaoAdmin/deploy/windows/deployer-started.txt','TaoAdmin/deploy/windows/deployer-headless.log') {
+              if (Test-Path $f) { Write-Host "--- $f ---"; Get-Content $f | ForEach-Object { Write-Host "  | $_" } }
+              else { Write-Host "missing: $f" }
+            }
+          } finally {
+            if (-not $exited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw 'deployer --status did not exit within 2 minutes — startup hang' }
+          }
           if ($p.ExitCode -ne 0) { throw "deployer --status exit code $($p.ExitCode)" }
           Write-Host 'status smoke OK'
       - name: E2E deploy (native route, real run via headless mode)

@@ -1,4 +1,4 @@
-﻿// DeployEngine: orchestrates every deployment step with full remediation.
+// DeployEngine: orchestrates every deployment step with full remediation.
 // Ported from install-windows.ps1 (WIN-INSTALLER-V1/V8) and hardened:
 //   - every real-machine failure mode gets an automatic fix ("create the condition")
 //   - every step reports progress to the UI
@@ -843,7 +843,8 @@ public sealed class DeployEngine
         var containers = new List<string>();
         if (Net.Ports.DockerEngineRunning())
         {
-            var r = ProcessRunner.RunAsync("docker", "ps --format '{{.Names}} {{.Status}}'").GetAwaiter().GetResult();
+            // Task.Run: never block-and-resume on a captured UI context (dispatcher deadlock).
+            var r = Task.Run(() => ProcessRunner.RunAsync("docker", "ps --format '{{.Names}} {{.Status}}'")).GetAwaiter().GetResult();
             containers.AddRange(r.Output.Where(l => !string.IsNullOrWhiteSpace(l)));
         }
         return new StatusReport(items, containers);
