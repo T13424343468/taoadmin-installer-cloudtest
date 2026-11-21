@@ -738,6 +738,11 @@ public sealed class DeployEngine
         StopByPidFiles();
         await StopByPorts(ct);
 
+        // Give killed processes time to fully exit and release file handles,
+        // otherwise the runtime directory delete below fails partially.
+        await Net.Ports.WaitPortsClosedAsync(
+            new[] { 5000, 5001, 5002, 5003, 8080, 3306, 6379 }, TimeSpan.FromSeconds(20), ct);
+
         // 3) Delete artifacts and runtimes (source code is kept).
         var targets = new List<(string Path, string Desc)>
         {
@@ -756,8 +761,9 @@ public sealed class DeployEngine
         {
             if (Directory.Exists(path))
             {
-                TryDeleteDir(path);
-                L($"已删除 {desc}");
+                TryDeleteDir(path, L);
+                if (!Directory.Exists(path)) L($"已删除 {desc}");
+                else L($"[WARN] {desc}未能完全删除：{path}");
             }
         }
 
@@ -783,6 +789,7 @@ public sealed class DeployEngine
                 {
                     var p = System.Diagnostics.Process.GetProcessById(pid);
                     p.Kill(entireProcessTree: true);
+                    try { p.WaitForExit(5000); } catch { }
                     L($"已停止 {Path.GetFileNameWithoutExtension(f)}（PID {pid}）");
                 }
                 catch { }
@@ -817,6 +824,7 @@ public sealed class DeployEngine
                     {
                         var p = System.Diagnostics.Process.GetProcessById(pid);
                         p.Kill(entireProcessTree: true);
+                        try { p.WaitForExit(5000); } catch { }
                         L($"已停止端口 {port} 上的 {pname}（PID {pid}）");
                     }
                     catch { }
@@ -903,9 +911,32 @@ public sealed class DeployEngine
             CopyDir(d, DeployPaths.Join(dst, Path.GetFileName(d)));
     }
 
-    private static void TryDeleteDir(string dir)
+    private static void TryDeleteDir(string dir, Action<string>? log = null)
     {
-        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); } catch { }
+        // Retry: freshly killed processes may still hold file handles for a moment.
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            if (!Directory.Exists(dir)) return;
+            try
+            {
+                Directory.Delete(dir, recursive: true);
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (attempt >= 6)
+                {
+                    log?.Invoke($"[WARN] 删除失败（{ex.GetType().Name}: {ex.Message}）：{dir}");
+                    try
+                    {
+                        foreach (var f in Directory.EnumerateFileSystemEntries(dir, "*", SearchOption.AllDirectories).Take(10))
+                            log?.Invoke($"  残留: {f}");
+                    }
+                    catch { }
+                }
+                else System.Threading.Thread.Sleep(1500);
+            }
+        }
     }
 
     private static void TryDeleteFile(string file)

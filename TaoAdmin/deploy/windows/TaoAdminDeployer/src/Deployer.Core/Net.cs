@@ -27,6 +27,23 @@ public static class Ports
         return PortOpen(port);
     }
 
+    // Waits until none of the ports is connectable anymore (processes fully exited).
+    public static async Task WaitPortsClosedAsync(int[] ports, TimeSpan timeout, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            bool anyOpen = false;
+            foreach (var p in ports)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (PortOpen(p)) { anyOpen = true; break; }
+            }
+            if (!anyOpen) return;
+            await Task.Delay(1000, ct);
+        }
+    }
+
     public static bool DockerEngineRunning()
     {
         try
