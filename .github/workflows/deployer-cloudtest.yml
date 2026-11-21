@@ -66,6 +66,19 @@ jobs:
         run: |
           dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o TaoAdmin/deploy/windows --nologo
           if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+      - name: Smoke --status (startup + output channel check)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--status' `
+            -RedirectStandardOutput 'status-out.log' -RedirectStandardError 'status-err.log' -PassThru
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw 'deployer --status did not exit within 2 minutes — startup hang' }
+          Get-Content 'status-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
+          Get-Content 'status-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
+          if (Test-Path 'TaoAdmin/deploy/windows/deployer-started.txt') { Write-Host "--- breadcrumb ---"; Get-Content 'TaoAdmin/deploy/windows/deployer-started.txt' }
+          if ($p.ExitCode -ne 0) { throw "deployer --status exit code $($p.ExitCode)" }
+          Write-Host 'status smoke OK'
       - name: E2E deploy (native route, real run via headless mode)
         timeout-minutes: 45
         shell: pwsh
@@ -77,6 +90,8 @@ jobs:
             -RedirectStandardOutput 'deployer-out.log' -RedirectStandardError 'deployer-err.log' `
             -PassThru
           $shown = 0
+          $start = Get-Date
+          $dumped = $false
           while (-not $p.HasExited) {
             Start-Sleep -Seconds 15
             if (Test-Path $hlog) {
@@ -84,6 +99,21 @@ jobs:
               if ($lines.Count -gt $shown) {
                 $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
                 $shown = $lines.Count
+              }
+            }
+            if (-not $dumped -and ((Get-Date) - $start).TotalMinutes -ge 5) {
+              $dumped = $true
+              Write-Host "!! deployer alive 5 min without exiting — capturing diagnostics"
+              $p.Refresh()
+              Write-Host ("process: PID={0} Title='{1}' Responding={2}" -f $p.Id, $p.MainWindowTitle, $p.Responding)
+              Get-Process TaoAdminDeployer -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host ("  window: '{0}' threads={1}" -f $_.MainWindowTitle, $_.Threads.Count)
+              }
+              dotnet tool install -g dotnet-dump --version 9.0.641601 2>&1 | Out-Null
+              $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+              dotnet-dump collect -p $p.Id -o deployer-hang.dmp --timeout 300 2>&1 | ForEach-Object { Write-Host "  dump: $_" }
+              if (Test-Path 'deployer-hang.dmp') {
+                dotnet-dump analyze deployer-hang.dmp -c "clrstack -all" "quit" 2>&1 | Select-Object -First 200 | ForEach-Object { Write-Host "  stack: $_" }
               }
             }
           }
@@ -152,6 +182,9 @@ jobs:
           path: |
             deployer-out.log
             deployer-err.log
-            uninstall-out.log
-            uninstall-err.log
+            status-out.log
+            status-err.log
+            deployer-hang.dmp
+            TaoAdmin/deploy/windows/deployer-headless.log
+            TaoAdmin/deploy/windows/deployer-started.txt
             TaoAdmin/deploy/windows/runtime/logs/

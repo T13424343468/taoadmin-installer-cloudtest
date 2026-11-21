@@ -22,6 +22,7 @@ public static class HeadlessRunner
         try { Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true }); } catch { }
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
         using var fileLog = OpenFileLog();
+        fileLogStatic = fileLog;
 
         void Tee(string line)
         {
@@ -76,7 +77,11 @@ public static class HeadlessRunner
     {
         try
         {
-            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "deployer-headless.log");
+            // Next to the real exe (Environment.ProcessPath), not AppContext.BaseDirectory:
+            // for single-file apps the two can differ, and CI watches the exe directory.
+            var exeDir = Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
+                         ?? AppContext.BaseDirectory;
+            var path = Path.Combine(exeDir, "deployer-headless.log");
             return new StreamWriter(path, append: false, System.Text.Encoding.UTF8) { AutoFlush = true };
         }
         catch
@@ -84,6 +89,15 @@ public static class HeadlessRunner
             return null; // read-only dir etc. — console output still works
         }
     }
+
+    // Last-resort logging for exception handlers: never throws.
+    internal static void EmergencyLog(object message)
+    {
+        try { Console.WriteLine("[EMERGENCY] " + message); } catch { }
+        try { fileLogStatic?.WriteLine("[EMERGENCY] " + message); } catch { }
+    }
+
+    private static StreamWriter? fileLogStatic;
 
     private static DeployOptions BuildOptions(string[] args)
     {
