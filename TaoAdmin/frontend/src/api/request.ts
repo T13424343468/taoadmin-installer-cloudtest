@@ -43,7 +43,7 @@ function redirectToLogin(): void {
 
 /** axios 实例 */
 const service: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30000,
 });
 
