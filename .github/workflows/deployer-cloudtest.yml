@@ -60,18 +60,42 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Baseline docker works
-        timeout-minutes: 15
+      - name: Baseline docker works (engine ready + Linux container mode)
+        timeout-minutes: 20
         shell: pwsh
         run: |
+          # 1) engine ready: runner docker daemon sometimes wedges after VM boot
           $ok = $false
           for ($i = 0; $i -lt 40; $i++) {
             docker info 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
             Write-Host "docker engine not ready, retry $i"; Start-Sleep -Seconds 15
-            # mid-wait restart: runner docker daemon sometimes wedges after VM boot
             if ($i -eq 12) { Stop-Process -Name 'Docker Desktop' -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 10; Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -ErrorAction SilentlyContinue }
           }
           if (-not $ok) { throw 'docker engine never became ready' }
+          # 2) switch to Linux containers: fresh runner daemons may sit in Windows mode
+          function Get-OsType { docker info --format "{{.OSType}}" 2>$null }
+          $switched = $false
+          for ($s = 1; $s -le 4 -and -not $switched; $s++) {
+            if ((Get-OsType) -eq 'linux') { $switched = $true; break }
+            Write-Host "switch attempt $s (current: $(Get-OsType))"
+            if (Test-Path 'C:\Program Files\Docker\Docker\DockerCli.exe') {
+              & 'C:\Program Files\Docker\Docker\DockerCli.exe' -SwitchDaemon 2>&1 | ForEach-Object { Write-Host "  $_" }
+            }
+            for ($w = 0; $w -lt 10; $w++) {
+              Start-Sleep -Seconds 6
+              if ((Get-OsType) -eq 'linux') { $switched = $true; break }
+            }
+            if (-not $switched -and $s -ge 2) {
+              Write-Host "restarting Docker Desktop..."
+              foreach ($n in @('Docker Desktop','com.docker.backend','docker')) {
+                Get-Process -Name $n -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              }
+              Start-Sleep -Seconds 5
+              Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+              Start-Sleep -Seconds 25
+            }
+          }
+          if (-not $switched) { throw "docker still in $(Get-OsType) container mode after 4 switch attempts" }
           docker ps
       - name: Publish deployer exe
         shell: pwsh

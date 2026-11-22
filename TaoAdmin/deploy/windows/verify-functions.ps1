@@ -27,15 +27,41 @@ foreach ($u in "$Gateway/health", "$Files/health", $Frontend) {
     Write-Host "health OK: $u"
 }
 
-# ---------- 2) 真实登录（走网关，业务码 + token 双断言） ----------
+# ---------- 2) 关闭验证码开关（仅测试环境；服务侧配置缓存 60 秒内生效） ----------
+$sql = "UPDATE sys_site_config SET config_value='0' WHERE config_key='loginCaptchaRequired';"
+$sql += "INSERT INTO sys_site_config (id, config_key, config_value) SELECT 5280300000000000999,'loginCaptchaRequired','0' WHERE NOT EXISTS (SELECT 1 FROM sys_site_config WHERE config_key='loginCaptchaRequired');"
+$nativeMysql = 'TaoAdmin/deploy/windows/runtime/mysql8/bin/mysql.exe'
+if (Test-Path $nativeMysql) {
+    Write-Host "native route: disabling captcha via portable mysql client"
+    & $nativeMysql -h127.0.0.1 -uroot -pMicro@2026 tao_admin -e $sql 2>&1 | ForEach-Object { Write-Host "  $_" }
+    if ($LASTEXITCODE -ne 0) { throw "native mysql exec failed (exit $LASTEXITCODE)" }
+} else {
+    Write-Host "container route: disabling captcha via docker exec"
+    docker exec taoadmin-mysql mysql -uroot -pMicro@2026 tao_admin -e $sql 2>&1 | ForEach-Object { Write-Host "  $_" }
+    if ($LASTEXITCODE -ne 0) { throw "docker exec mysql failed (exit $LASTEXITCODE)" }
+}
+
+# ---------- 3) 真实登录（走网关，业务码 + token 双断言；配置缓存最长 60 秒） ----------
 $loginBody = @{ username = $Username; password = $Password } | ConvertTo-Json
-$login = Invoke-RestMethod -Uri "$Gateway/api/identity/auth/login" -Method Post -Body $loginBody -ContentType 'application/json' -TimeoutSec 20
-if ($login.code -ne 200 -or -not $login.data.token) { throw "login failed: code=$($login.code) msg=$($login.message)" }
-$token = $login.data.token
+$token = $null
+$deadline = (Get-Date).AddSeconds(120)
+while ((Get-Date) -lt $deadline) {
+    try {
+        $login = Invoke-RestMethod -Uri "$Gateway/api/identity/auth/login" -Method Post -Body $loginBody -ContentType 'application/json' -TimeoutSec 20
+        if ($login.code -eq 200 -and $login.data.token) { $token = $login.data.token; break }
+        if ($login.message -notmatch '验证码') { throw "login failed: code=$($login.code) msg=$($login.message)" }
+        Write-Host "captcha still enforced (config cache), retrying..."
+    } catch {
+        if ($_.Exception.Message -notmatch '验证码') { throw }
+        Write-Host "captcha still enforced (config cache), retrying..."
+    }
+    Start-Sleep -Seconds 10
+}
+if (-not $token) { throw 'login failed: captcha never cleared within 120s' }
 Write-Host "login OK (token acquired)"
 $headers = @{ Authorization = "Bearer $token" }
 
-# ---------- 3) 业务接口逐项验证（业务码必须 200） ----------
+# ---------- 4) 业务接口逐项验证（业务码必须 200） ----------
 $checks = @(
     @{ Name = '用户分页';   Url = "$Gateway/api/identity/users?pageIndex=1&pageSize=10" },
     @{ Name = '角色分页';   Url = "$Gateway/api/identity/roles?pageIndex=1&pageSize=10" },
@@ -51,7 +77,7 @@ foreach ($c in $checks) {
     Write-Host "function OK: $($c.Name)"
 }
 
-# ---------- 4) 前端页面是真实应用页 ----------
+# ---------- 5) 前端页面是真实应用页 ----------
 $fe = Invoke-WebRequest $Frontend -UseBasicParsing -TimeoutSec 15
 if ($fe.Content -notmatch '<div id="app"') { throw 'frontend page does not look like the app entry' }
 Write-Host "frontend page OK"
