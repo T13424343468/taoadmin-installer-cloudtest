@@ -66,6 +66,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { useBatchSelection } from '@/composables/useBatchSelection';
+import { pageAfterDelete } from '@/utils/listPage';
 import { getAuditLogs, cleanupAuditLogs, batchDeleteAuditLogs, type AuditLogItem } from '@/api/audit';
 import type { Dayjs } from 'dayjs';
 
@@ -160,6 +161,8 @@ function onBatchDelete() {
         const r = await batchDeleteAuditLogs(ids);
         message.success(`批量删除完成：成功 ${r.deleted} 条`);
         clearSelection();
+        query.pageIndex = pageAfterDelete(total.value, r.deleted, query.pageIndex, query.pageSize);
+        cursorMap.clear();
         await load();
       } finally {
         batchLoading.value = false;
@@ -173,6 +176,8 @@ async function onCleanup() {
   try {
     const r = await cleanupAuditLogs();
     message.success(`已清理 ${r.deleted} 条过期日志`);
+    query.pageIndex = pageAfterDelete(total.value, r.deleted, query.pageIndex, query.pageSize);
+    cursorMap.clear();
     await load();
   } finally {
     cleaning.value = false;
