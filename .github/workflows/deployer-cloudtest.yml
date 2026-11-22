@@ -5,6 +5,7 @@ on:
     paths:
       - 'TaoAdmin/deploy/windows/TaoAdminDeployer/**'
       - 'TaoAdmin/deploy/windows/verify-functions.ps1'
+      - 'TaoAdmin/deploy/docker-compose.yml'
       - '.github/workflows/deployer-cloudtest.yml'
   workflow_dispatch: {}
 

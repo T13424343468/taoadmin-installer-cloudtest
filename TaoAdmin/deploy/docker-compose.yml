@@ -129,7 +129,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5001
-      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;
+      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;AllowPublicKeyRetrieval=True;
       - ConnectionStrings__Redis=redis:6379,abortConnect=false
       - Elasticsearch__Uri=http://elasticsearch:9200
       # 消息队列：容器内默认走 RabbitMQ（本地直跑用内存队列，见 appsettings）
@@ -155,7 +155,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5002
-      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;
+      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;AllowPublicKeyRetrieval=True;
       - ConnectionStrings__Redis=redis:6379,abortConnect=false
       - Elasticsearch__Uri=http://elasticsearch:9200
     depends_on:
@@ -174,7 +174,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5003
-      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_files;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;
+      - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_files;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;AllowPublicKeyRetrieval=True;
     ports:
       - "5003:5003"
     depends_on:
