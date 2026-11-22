@@ -23,4 +23,22 @@ public class OnlineUserController : BaseApiController
     [Permission("monitor:online:kick")]
     public ApiResult<object> Kick(string sessionId)
         => ApiOk(_sessions.Revoke(sessionId) ? "该会话已被强制下线" : "会话不存在或已下线");
+
+    /// <summary>批量强制下线（返回实际下线数）</summary>
+    [HttpPost("batch-kick")]
+    [Permission("monitor:online:kick")]
+    public ApiResult<object> BatchKick([FromBody] BatchKickRequest req)
+    {
+        var kicked = 0;
+        foreach (var sessionId in req.sessionIds.Distinct())
+            if (_sessions.Revoke(sessionId)) kicked++;
+        return ApiOk<object>(new { kicked }, "批量下线完成");
+    }
+}
+
+/// <summary>批量强制下线请求：会话 ID 列表</summary>
+public class BatchKickRequest
+{
+    /// <summary>要下线的会话 ID</summary>
+    public List<string> sessionIds { get; set; } = new();
 }

@@ -52,6 +52,24 @@ public class AnnouncementController : BaseApiController
         return ApiOk("删除成功");
     }
 
+    /// <summary>批量删除公告（软删，返回实际删除数）</summary>
+    [HttpPost("batch-delete")]
+    [Permission("sys:notice:manage")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
+
+    /// <summary>批量上/下线（online=true 上线，返回实际更新数）</summary>
+    [HttpPost("batch-status")]
+    [Permission("sys:notice:manage")]
+    public async Task<ApiResult<object>> BatchStatus([FromBody] BatchStatusRequest req)
+    {
+        var updated = await _svc.BatchSetStatusAsync(req.Ids, req.status == 1);
+        return ApiOk<object>(new { updated }, "批量操作完成");
+    }
+
     /// <summary>登录用户可见的最新公告（仅已发布，顶栏通知入口拉取）</summary>
     [HttpGet("latest")]
     [Authorize]

@@ -32,6 +32,24 @@ export function markMessageRead(id: string): Promise<void> {
   return request<void>({ url: `/identity/messages/${id}/read`, method: 'put' });
 }
 
+/** 批量标记已读 */
+export function batchReadMessages(ids: string[]): Promise<{ updated: number }> {
+  return request<{ updated: number }>({
+    url: '/identity/messages/batch-read',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}
+
+/** 批量删除消息（软删） */
+export function batchDeleteMessages(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/messages/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}
+
 /** 【消息队列演示】向指定主题发布一条测试消息，消费者收到后落库为站内消息 */
 export function publishDemoMessage(topic: string, content: string): Promise<void> {
   return request<void>({ url: '/identity/messages/demo/publish', method: 'post', data: { topic, content } });

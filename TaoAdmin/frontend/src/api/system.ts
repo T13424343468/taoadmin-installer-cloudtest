@@ -59,6 +59,24 @@ export function deleteUser(id: string): Promise<void> {
   return request<void>({ url: `/identity/users/${id}`, method: 'delete' });
 }
 
+/** 批量删除用户（自动跳过当前登录账号） */
+export function batchDeleteUsers(ids: string[]): Promise<{ deleted: number; skipped: number }> {
+  return request<{ deleted: number; skipped: number }>({
+    url: '/identity/users/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}
+
+/** 批量启用/停用用户（自动跳过当前登录账号） */
+export function batchSetUserStatus(ids: string[], status: number): Promise<{ updated: number; skipped: number }> {
+  return request<{ updated: number; skipped: number }>({
+    url: '/identity/users/batch-status',
+    method: 'post',
+    data: { ids: ids.map(Number), status },
+  });
+}
+
 /** 重置密码 */
 export function resetUserPassword(id: string, password: string): Promise<void> {
   return request<void>({ url: `/identity/users/${id}/password`, method: 'put', data: { password } });
@@ -100,6 +118,15 @@ export function saveRole(data: Partial<RoleItem>): Promise<void> {
 
 export function deleteRole(id: string): Promise<void> {
   return request<void>({ url: `/identity/roles/${id}`, method: 'delete' });
+}
+
+/** 批量删除角色（连带清理授权关系） */
+export function batchDeleteRoles(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/roles/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
 }
 
 /** 分配权限（菜单树 + 接口权限） */
@@ -183,4 +210,13 @@ export function saveApi(data: Partial<ApiResourceItem>): Promise<void> {
 
 export function deleteApi(id: string): Promise<void> {
   return request<void>({ url: `/identity/apis/${id}`, method: 'delete' });
+}
+
+/** 批量删除接口资源（连带清理角色关联） */
+export function batchDeleteApis(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/apis/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
 }

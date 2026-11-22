@@ -62,6 +62,20 @@ public class RoleAppService
     /// <summary>删除角色（软删 + 级联清理关联）</summary>
     public async Task DeleteAsync(long id) => await _roles.SoftDeleteCascadeAsync(id);
 
+    /// <summary>批量删除角色（逐个软删并级联清理授权关系，返回实际删除数）</summary>
+    public async Task<int> BatchDeleteAsync(List<long> ids)
+    {
+        var deleted = 0;
+        foreach (var id in ids.Distinct())
+        {
+            var role = await _roles.FindByIdAsync(id);
+            if (role == null) continue;
+            await _roles.SoftDeleteCascadeAsync(id);
+            deleted++;
+        }
+        return deleted;
+    }
+
     /// <summary>角色已分配的权限（菜单ID + 接口ID）</summary>
     public async Task<(List<string> MenuIds, List<string> ApiIds)> GetPermissionsAsync(long roleId)
     {

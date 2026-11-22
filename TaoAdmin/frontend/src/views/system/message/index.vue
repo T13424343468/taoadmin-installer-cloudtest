@@ -9,6 +9,17 @@
         </a-button>
         <a-button @click="loadStats">队列状态</a-button>
       </a-space>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button :loading="batchLoading" @click="onBatchRead">批量标已读</a-button>
+        <a-button danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
       <span v-if="statsText" class="stats-text">{{ statsText }}</span>
     </div>
 
@@ -20,6 +31,7 @@
       :pagination="pagination"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -67,11 +79,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
 import {
   getMessagePage,
   markMessageRead,
+  batchReadMessages,
+  batchDeleteMessages,
   publishDemoMessage,
   getQueueStats,
   type MessageItem,
@@ -79,6 +94,27 @@ import {
 
 const loading = ref(false);
 const data = ref<MessageItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getMessagePage({ pageIndex: 1, pageSize: 10000 });
+  return (res.items || []).map((m) => m.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已选中全部 ${selectedCount.value} 条消息`);
+}
 
 const query = reactive({ pageIndex: 1, pageSize: 10 });
 
@@ -109,6 +145,7 @@ async function loadData(pageIndex?: number) {
     const res = await getMessagePage({ ...query });
     data.value = res.items || [];
     pagination.total = Number(res.total) || 0;
+    setTotal(Number(res.total) || 0);
   } finally {
     loading.value = false;
   }
@@ -130,6 +167,50 @@ async function onMarkRead(record: MessageItem) {
   await markMessageRead(record.id);
   message.success('已标记已读');
   loadData();
+}
+
+// ============ 批量操作 ============
+
+function onBatchRead() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量标已读',
+    content: `确定把选中的 ${ids.length} 条消息标记为已读吗？`,
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchReadMessages(ids);
+        message.success(`批量标已读完成：更新 ${res.updated} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除消息',
+    content: `确定删除选中的 ${ids.length} 条消息吗？`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteMessages(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 // ============ 消息队列演示 ============
@@ -197,6 +278,10 @@ async function openDetail(record: MessageItem) {
 .stats-text {
   color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 
 .unread-title {

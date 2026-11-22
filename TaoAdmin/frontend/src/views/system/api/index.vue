@@ -7,6 +7,16 @@
         新增接口
       </a-button>
       <a-button style="margin-left: 8px" @click="loadData(1)">刷新</a-button>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'sys:api:delete'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
     </div>
 
     <!-- 表格 -->
@@ -17,6 +27,7 @@
       :pagination="pagination"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -94,17 +105,40 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
 import {
   getApiPage,
   saveApi,
   deleteApi,
+  batchDeleteApis,
   type ApiResourceItem,
 } from '@/api/system';
 
 const loading = ref(false);
 const data = ref<ApiResourceItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getApiPage({ pageIndex: 1, pageSize: 10000 });
+  return (res.items || []).map((a) => a.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已选中全部 ${selectedCount.value} 条接口`);
+}
 
 const pagination = reactive({
   current: 1,
@@ -143,6 +177,7 @@ async function loadData(pageIndex?: number) {
     const res = await getApiPage({ pageIndex: pagination.current, pageSize: pagination.pageSize });
     data.value = res.items || [];
     pagination.total = res.total || 0;
+    setTotal(res.total || 0);
   } finally {
     loading.value = false;
   }
@@ -200,11 +235,39 @@ async function onDelete(record: ApiResourceItem) {
   loadData();
 }
 
+// ============ 批量删除 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除接口',
+    content: `确定删除选中的 ${ids.length} 个接口吗？其角色授权关联会一并清理。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteApis(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
 onMounted(() => loadData());
 </script>
 
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 </style>

@@ -6,6 +6,11 @@
         刷新
       </a-button>
       <span class="online-total">共 {{ data.length }} 个在线会话</span>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'monitor:online:kick'" danger :loading="batchLoading" @click="onBatchKick">批量强制下线</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
     </div>
 
     <a-table
@@ -15,6 +20,7 @@
       :pagination="false"
       row-key="sessionId"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'userName'">
@@ -44,12 +50,24 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { ReloadOutlined } from '@ant-design/icons-vue';
-import { getOnlineUsers, kickOnlineUser, type OnlineUserItem } from '@/api/monitor';
+import { useBatchSelection } from '@/composables/useBatchSelection';
+import { getOnlineUsers, kickOnlineUser, batchKickOnlineUsers, type OnlineUserItem } from '@/api/monitor';
 
 const loading = ref(false);
 const data = ref<OnlineUserItem[]>([]);
+
+// ============ 批量选择（在线会话不分页，表头全选即全量） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => data.value.map((d) => d.sessionId));
 
 const columns = [
   { title: '用户名', key: 'userName', dataIndex: 'userName', width: 120 },
@@ -65,6 +83,7 @@ async function loadData() {
   loading.value = true;
   try {
     data.value = (await getOnlineUsers()) || [];
+    clearSelection();
   } finally {
     loading.value = false;
   }
@@ -76,6 +95,28 @@ async function onKick(record: OnlineUserItem) {
   loadData();
 }
 
+function onBatchKick() {
+  const sessionIds = getSelectedIds();
+  if (!sessionIds.length) return;
+  Modal.confirm({
+    title: '批量强制下线',
+    content: `确定将选中的 ${sessionIds.length} 个会话强制下线吗？下线后即刻生效。`,
+    okText: '强制下线',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const r = await batchKickOnlineUsers(sessionIds);
+        message.success(`批量强制下线完成：成功 ${r.kicked} 个会话`);
+        clearSelection();
+        await loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
 onMounted(loadData);
 </script>
 
@@ -83,6 +124,9 @@ onMounted(loadData);
 .online-total {
   margin-left: 12px;
   color: rgba(0, 0, 0, 0.45);
+}
+.batch-count {
+  color: #1677ff;
 }
 .ua-cell {
   color: rgba(0, 0, 0, 0.45);

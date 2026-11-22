@@ -1,9 +1,17 @@
 ﻿<template>
   <a-card title="审计日志">
     <template #extra>
-      <a-popconfirm title="立即按保留策略清理过期日志？" @confirm="onCleanup">
-        <a-button danger :loading="cleaning">清理过期日志</a-button>
-      </a-popconfirm>
+      <a-space>
+        <template v-if="selectedCount > 0">
+          <span class="batch-count">已选 {{ selectedCount }} 项</span>
+          <a-button danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+          <a @click="clearSelection">清空勾选</a>
+        </template>
+        <a-popconfirm title="立即按保留策略清理过期日志？" @confirm="onCleanup">
+          <a-button danger :loading="cleaning">清理过期日志</a-button>
+        </a-popconfirm>
+        <a-button v-if="selectedCount === 0 && total > 0" @click="onSelectAll">选中全部 {{ total }} 条</a-button>
+      </a-space>
     </template>
 
     <a-form layout="inline" style="margin-bottom: 12px" @submit.prevent="reload">
@@ -43,6 +51,7 @@
       }"
       row-key="id"
       size="small"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'success'">
@@ -55,8 +64,9 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { message } from 'ant-design-vue';
-import { getAuditLogs, cleanupAuditLogs, type AuditLogItem } from '@/api/audit';
+import { message, Modal } from 'ant-design-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
+import { getAuditLogs, cleanupAuditLogs, batchDeleteAuditLogs, type AuditLogItem } from '@/api/audit';
 import type { Dayjs } from 'dayjs';
 
 const columns = [
@@ -74,6 +84,24 @@ const loading = ref(false);
 const cleaning = ref(false);
 const success = ref<number | undefined>();
 const range = ref<[string, string] | Dayjs[] | undefined>();
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => rows.value.map((r) => r.id));
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 条`);
+}
 
 const query = reactive({
   pageIndex: 1,
@@ -103,6 +131,7 @@ async function load() {
     });
     rows.value = page.items;
     total.value = page.total;
+    setTotal(page.total);
     if (page.nextCursor) cursorMap.set(query.pageIndex, page.nextCursor);
     else cursorMap.delete(query.pageIndex);
   } finally {
@@ -113,7 +142,30 @@ async function load() {
 function reload() {
   query.pageIndex = 1;
   cursorMap.clear();
+  clearSelection();
   void load();
+}
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除',
+    content: `确定删除选中的 ${ids.length} 条审计日志吗？删除后不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const r = await batchDeleteAuditLogs(ids);
+        message.success(`批量删除完成：成功 ${r.deleted} 条`);
+        clearSelection();
+        await load();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 async function onCleanup() {
@@ -129,3 +181,9 @@ async function onCleanup() {
 
 onMounted(load);
 </script>
+
+<style scoped>
+.batch-count {
+  color: #1677ff;
+}
+</style>

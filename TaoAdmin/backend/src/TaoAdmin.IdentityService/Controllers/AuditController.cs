@@ -73,6 +73,17 @@ public class AuditController : BaseApiController
         var deleted = await _cleanup.CleanupAsync(settings.LogRetentionDays);
         return ApiOk<object>(new { deleted });
     }
+
+    /// <summary>批量删除审计日志（物理删除，返回实际删除数；本操作自动留痕）</summary>
+    [HttpPost("log/batch-delete")]
+    [Permission("sys:audit:manage")]
+    public async Task<ApiResult<object>> BatchDeleteLogs([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _logs.BatchDeleteAsync(req.Ids);
+        await _trail.WriteAsync(User.GetUserId(), User.GetUserName(), 0, "audit:log/batch-delete",
+            null, new { count = req.Ids.Count, deleted }, Ip);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
 }
 
 /// <summary>

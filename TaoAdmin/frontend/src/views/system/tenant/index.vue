@@ -6,6 +6,11 @@
         <template #icon><PlusOutlined /></template>
         新增租户
       </a-button>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'sys:tenant:manage'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
     </div>
 
     <!-- 表格 -->
@@ -16,6 +21,7 @@
       :pagination="false"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
@@ -32,6 +38,13 @@
               @confirm="onToggleStatus(record)"
             >
               <a v-permission="'sys:tenant:manage'">{{ Number(record.status) === 1 ? '停用' : '启用' }}</a>
+            </a-popconfirm>
+            <a-popconfirm
+              v-permission="'sys:tenant:manage'"
+              title="确定删除该租户吗？"
+              @confirm="onDelete(record)"
+            >
+              <a class="danger-link" v-permission="'sys:tenant:manage'">删除</a>
             </a-popconfirm>
           </a-space>
         </template>
@@ -71,12 +84,24 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
-import { getTenantList, saveTenant, type TenantItem } from '@/api/tenant';
+import { useBatchSelection } from '@/composables/useBatchSelection';
+import { getTenantList, saveTenant, deleteTenant, batchDeleteTenants, type TenantItem } from '@/api/tenant';
 
 const loading = ref(false);
 const data = ref<TenantItem[]>([]);
+
+// ============ 批量选择 ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => data.value.map((t) => t.id));
 
 const columns = [
   { title: '租户名称', dataIndex: 'tenantName', key: 'tenantName' },
@@ -164,11 +189,45 @@ async function onToggleStatus(record: TenantItem) {
   loadData();
 }
 
+async function onDelete(record: TenantItem) {
+  await deleteTenant(record.id);
+  message.success('删除成功');
+  loadData();
+}
+
+// ============ 批量删除 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除租户',
+    content: `确定删除选中的 ${ids.length} 个租户吗？`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteTenants(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
 onMounted(() => loadData());
 </script>
 
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 </style>

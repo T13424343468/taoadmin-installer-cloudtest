@@ -87,6 +87,24 @@ public class UserController : BaseApiController
         return ApiOk("删除成功");
     }
 
+    /// <summary>批量删除用户（自动跳过当前登录账号，返回 skipped 跳过数）</summary>
+    [HttpPost("batch-delete")]
+    [Permission("sys:user:delete")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var skipped = await _svc.BatchDeleteAsync(req.Ids, User.GetUserId());
+        return ApiOk<object>(new { deleted = req.Ids.Distinct().Count() - skipped, skipped }, "批量删除完成");
+    }
+
+    /// <summary>批量启用/停用用户（自动跳过当前登录账号，返回 skipped 跳过数）</summary>
+    [HttpPost("batch-status")]
+    [Permission("sys:user:edit")]
+    public async Task<ApiResult<object>> BatchStatus([FromBody] BatchStatusRequest req)
+    {
+        var skipped = await _svc.BatchSetStatusAsync(req.Ids, req.status, User.GetUserId());
+        return ApiOk<object>(new { updated = req.Ids.Distinct().Count() - skipped, skipped }, "批量操作完成");
+    }
+
     /// <summary>重置密码</summary>
     [HttpPut("{id}/password")]
     [Permission("sys:user:resetPwd")]
@@ -185,6 +203,15 @@ public class RoleController : BaseApiController
         return ApiOk("删除成功");
     }
 
+    /// <summary>批量删除角色（连带清理授权关系，返回实际删除数）</summary>
+    [HttpPost("batch-delete")]
+    [Permission("sys:role:delete")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
+
     /// <summary>角色已分配权限</summary>
     [HttpGet("{id}/permissions")]
     [Permission("sys:role:list")]
@@ -275,6 +302,31 @@ public class ApiController : BaseApiController
         await _svc.DeleteAsync(long.Parse(id));
         return ApiOk("删除成功");
     }
+
+    /// <summary>批量删除接口资源（连带清理角色关联，返回实际删除数）</summary>
+    [HttpPost("batch-delete")]
+    [Permission("sys:api:delete")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
+}
+
+/// <summary>批量操作请求：ID 列表（各列表页批量删除共用）</summary>
+public class BatchIdsRequest
+{
+    /// <summary>要操作的记录 ID</summary>
+    public List<long> Ids { get; set; } = new();
+}
+
+/// <summary>批量状态请求：ID 列表 + 目标状态</summary>
+public class BatchStatusRequest
+{
+    /// <summary>要操作的记录 ID</summary>
+    public List<long> Ids { get; set; } = new();
+    /// <summary>目标状态（1=启用 0=停用）</summary>
+    public int status { get; set; }
 }
 
 /// <summary>监控中心入口：服务健康 + 日志查询。业务在 MonitorAppService。</summary>

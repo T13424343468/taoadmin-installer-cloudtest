@@ -96,3 +96,12 @@ export function getOnlineUsers(): Promise<OnlineUserItem[]> {
 export function kickOnlineUser(sessionId: string): Promise<void> {
   return request<void>({ url: `/identity/online-users/${encodeURIComponent(sessionId)}`, method: 'delete' });
 }
+
+/** 批量强制下线 */
+export function batchKickOnlineUsers(sessionIds: string[]): Promise<{ kicked: number }> {
+  return request<{ kicked: number }>({
+    url: '/identity/online-users/batch-kick',
+    method: 'post',
+    data: { sessionIds },
+  });
+}

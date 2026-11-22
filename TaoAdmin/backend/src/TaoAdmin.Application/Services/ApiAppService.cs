@@ -72,6 +72,20 @@ public class ApiAppService
     /// <summary>删除接口资源（软删 + 清理角色关联）</summary>
     public async Task DeleteAsync(long id) => await _apis.SoftDeleteAsync(id);
 
+    /// <summary>批量删除接口资源（逐个软删并清理角色关联，返回实际删除数）</summary>
+    public async Task<int> BatchDeleteAsync(List<long> ids)
+    {
+        var deleted = 0;
+        foreach (var id in ids.Distinct())
+        {
+            var exists = await _db.Queryable<SysApi>().AnyAsync(a => a.Id == id && a.IsDeleted == false);
+            if (!exists) continue;
+            await _apis.SoftDeleteAsync(id);
+            deleted++;
+        }
+        return deleted;
+    }
+
     private static ApiItemDto ToItem(SysApi a) => new()
     {
         id = a.Id.ToString(),

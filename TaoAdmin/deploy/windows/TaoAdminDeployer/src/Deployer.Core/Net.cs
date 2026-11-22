@@ -152,10 +152,12 @@ public static class Ports
 
 public static class Http
 {
-    public static async Task<bool> WaitOkAsync(string url, TimeSpan timeout, CancellationToken ct)
+    public static async Task<bool> WaitOkAsync(string url, TimeSpan timeout, CancellationToken ct, Action<int>? onWaiting = null)
     {
         using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(4) };
         var deadline = DateTime.UtcNow + timeout;
+        var started = DateTime.UtcNow;
+        var lastReport = DateTime.UtcNow;
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
@@ -165,6 +167,12 @@ public static class Http
                 if ((int)resp.StatusCode < 500) return true;
             }
             catch { }
+            // 等服务期间每 10 秒报一次进度，用户知道程序没卡死
+            if (onWaiting != null && (DateTime.UtcNow - lastReport).TotalSeconds >= 10)
+            {
+                onWaiting((int)(DateTime.UtcNow - started).TotalSeconds);
+                lastReport = DateTime.UtcNow;
+            }
             await Task.Delay(3000, ct);
         }
         return false;

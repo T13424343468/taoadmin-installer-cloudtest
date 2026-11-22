@@ -9,6 +9,18 @@
         <template #icon><PlusOutlined /></template>
         发布公告
       </a-button>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'sys:notice:manage'" :loading="batchLoading" @click="onBatchStatus(true)">批量上线</a-button>
+        <a-button v-permission="'sys:notice:manage'" :loading="batchLoading" @click="onBatchStatus(false)">批量下线</a-button>
+        <a-button v-permission="'sys:notice:manage'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
     </div>
 
     <!-- 表格 -->
@@ -19,6 +31,7 @@
       :pagination="pagination"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -84,19 +97,43 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import FilterBar, { type FilterField } from '@/components/FilterBar/index.vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
 import {
   getAnnouncementPage,
   publishAnnouncement,
   setAnnouncementStatus,
   deleteAnnouncement,
+  batchDeleteAnnouncements,
+  batchSetAnnouncementStatus,
   type AnnouncementItem,
 } from '@/api/announcement';
 
 const loading = ref(false);
 const data = ref<AnnouncementItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getAnnouncementPage({ pageIndex: 1, pageSize: 10000, keyword: query.keyword });
+  return (res.items || []).map((a) => a.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 条`);
+}
 
 const query = reactive<{ keyword?: string; pageIndex: number; pageSize: number }>({
   pageIndex: 1,
@@ -134,6 +171,7 @@ async function loadData(pageIndex?: number) {
     const res = await getAnnouncementPage({ ...query });
     data.value = res.items || [];
     pagination.total = res.total || 0;
+    setTotal(res.total || 0);
   } finally {
     loading.value = false;
   }
@@ -149,7 +187,53 @@ function onTableChange(pag: any) {
 
 function resetQuery() {
   query.keyword = undefined;
+  clearSelection();
   loadData(1);
+}
+
+// ============ 批量操作 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除公告',
+    content: `确定删除选中的 ${ids.length} 条公告吗？`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteAnnouncements(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
+function onBatchStatus(online: boolean) {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  const label = online ? '上线' : '下线';
+  Modal.confirm({
+    title: `批量${label}`,
+    content: `确定${label}选中的 ${ids.length} 条公告吗？${online ? '' : '下线后登录用户不可见。'}`,
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchSetAnnouncementStatus(ids, online);
+        message.success(`批量${label}完成：更新 ${res.updated} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 // ============ 发布 ============
@@ -211,6 +295,10 @@ onMounted(() => loadData());
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 
 .detail-meta {

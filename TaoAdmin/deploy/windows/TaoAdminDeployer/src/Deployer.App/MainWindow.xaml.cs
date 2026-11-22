@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private ObservableCollection<string> _envItems = new();
     private ObservableCollection<string> _stepItems = new();
     private System.Windows.Threading.DispatcherTimer? _etaTimer;
+    private System.Windows.Threading.DispatcherTimer? _statusTimer;
     private DateTime _deployStart;
     private int _doneWeight, _totalWeight;
     private CancellationTokenSource? _cts;
@@ -83,6 +84,21 @@ public partial class MainWindow : Window
             _ => "TaoAdmin 一键部署器",
         };
         if (page == "home") RefreshEnvironment();
+        // 状态页每 10 秒自动刷新；离开页面即停表
+        if (page == "status")
+        {
+            RefreshStatus();
+            if (_statusTimer == null)
+            {
+                _statusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+                _statusTimer.Tick += (_, _) => RefreshStatus();
+            }
+            _statusTimer.Start();
+        }
+        else
+        {
+            _statusTimer?.Stop();
+        }
     }
 
     private void OnHomeClick(object sender, RoutedEventArgs e) => ShowPage("home");
@@ -284,6 +300,7 @@ public partial class MainWindow : Window
             StatusList.Items.Add($"{i.Name,-16} {(i.Running ? "● 运行中" : "○ 未运行")}");
         foreach (var c in s.Containers)
             StatusList.Items.Add("  容器: " + c);
+        StatusRefreshTime.Text = $"每 10 秒自动刷新 · 上次刷新 {DateTime.Now:HH:mm:ss}";
     }
 
     // ---------------- cancel ----------------

@@ -19,6 +19,18 @@
           导入
         </a-button>
       </a-space>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'sys:user:edit'" :loading="batchLoading" @click="onBatchStatus(1)">批量启用</a-button>
+        <a-button v-permission="'sys:user:edit'" :loading="batchLoading" @click="onBatchStatus(0)">批量停用</a-button>
+        <a-button v-permission="'sys:user:delete'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="onClearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
     </div>
 
     <!-- 表格 -->
@@ -30,6 +42,7 @@
       :scroll="{ x: 730 }"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -182,13 +195,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons-vue';
 import FilterBar, { type FilterField } from '@/components/FilterBar/index.vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
 import {
   getUserPage,
   saveUser,
   deleteUser,
+  batchDeleteUsers,
+  batchSetUserStatus,
   resetUserPassword,
   assignUserRoles,
   getAllRoles,
@@ -200,6 +216,31 @@ import { exportUsers, downloadUserTemplate, importUsers, type UserImportResult }
 const loading = ref(false);
 const data = ref<UserItem[]>([]);
 const allRoles = ref<RoleItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getUserPage({ pageIndex: 1, pageSize: 10000, username: query.username, status: query.status });
+  return (res.items || []).map((u) => u.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 条`);
+}
+
+function onClearSelection() {
+  clearSelection();
+}
 
 const query = reactive<{ username?: string; status?: number; pageIndex: number; pageSize: number }>({
   pageIndex: 1,
@@ -245,6 +286,7 @@ async function loadData(pageIndex?: number) {
     const res = await getUserPage({ ...query });
     data.value = res.items || [];
     pagination.total = res.total || 0;
+    setTotal(res.total || 0);
   } finally {
     loading.value = false;
   }
@@ -261,7 +303,53 @@ function onTableChange(pag: any) {
 function resetQuery() {
   query.username = undefined;
   query.status = undefined;
+  clearSelection();
   loadData(1);
+}
+
+// ============ 批量操作 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除',
+    content: `确定删除选中的 ${ids.length} 个用户吗？当前登录账号会自动跳过。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteUsers(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条${res.skipped ? `，跳过当前账号 ${res.skipped} 条` : ''}`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
+function onBatchStatus(status: number) {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  const label = status === 1 ? '启用' : '停用';
+  Modal.confirm({
+    title: `批量${label}`,
+    content: `确定${label}选中的 ${ids.length} 个用户吗？当前登录账号会自动跳过。`,
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchSetUserStatus(ids, status);
+        message.success(`批量${label}完成：更新 ${res.updated} 条${res.skipped ? `，跳过当前账号 ${res.skipped} 条` : ''}`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 // ============ 新增/编辑 ============
@@ -437,5 +525,9 @@ onMounted(async () => {
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 </style>

@@ -92,6 +92,15 @@ export function cleanupAuditLogs(): Promise<{ deleted: number }> {
   });
 }
 
+/** 批量删除审计日志（物理删除） */
+export function batchDeleteAuditLogs(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/audit/log/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}
+
 /** 通知渠道配置（未配置项返回空串） */
 export function getNotifyChannel(): Promise<Record<string, string>> {
   return request<Record<string, string>>({

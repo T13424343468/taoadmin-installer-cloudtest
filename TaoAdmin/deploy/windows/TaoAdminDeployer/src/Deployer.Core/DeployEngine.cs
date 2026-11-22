@@ -560,7 +560,7 @@ public sealed class DeployEngine
 
     private async Task StepHealth(CancellationToken ct)
     {
-        L("健康检查（每项最多等 2 分钟）……");
+        L("健康检查（每项最多等 15 分钟，等待期间每 10 秒报一次进度）……");
         var targets = new List<(string Name, string Url)>
         {
             ("网关", "http://127.0.0.1:5000/health"),
@@ -571,7 +571,8 @@ public sealed class DeployEngine
         };
         foreach (var (name, url) in targets)
         {
-            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(2), ct))
+            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(15), ct,
+                    waited => L($"仍在等待 {name} 就绪……已等 {waited / 60} 分 {waited % 60} 秒（上限 15 分钟）")))
                 throw new InvalidOperationException($"{name} 健康检查未通过: {url}（日志见 {_p.LogDir}）");
             L($"健康检查通过: {name}");
         }

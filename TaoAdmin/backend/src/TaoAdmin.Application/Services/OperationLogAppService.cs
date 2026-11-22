@@ -88,6 +88,10 @@ public class OperationLogAppService(ISqlSugarClient db, IMemoryCache cache)
             return null;
         }
     }
+
+    /// <summary>批量删除审计日志（物理删除，返回实际删除数；本操作由控制器留痕）</summary>
+    public async Task<int> BatchDeleteAsync(List<long> ids)
+        => await db.Deleteable<SysOperationLog>().In(ids.Distinct().ToList()).ExecuteCommandAsync();
 }
 
 /// <summary>

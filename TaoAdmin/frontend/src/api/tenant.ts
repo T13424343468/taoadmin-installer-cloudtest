@@ -37,3 +37,17 @@ export function saveTenant(data: TenantSaveParams): Promise<void> {
     data,
   });
 }
+
+/** 删除租户（软删） */
+export function deleteTenant(id: string): Promise<void> {
+  return request<void>({ url: `/identity/tenants/${id}`, method: 'delete' });
+}
+
+/** 批量删除租户（软删） */
+export function batchDeleteTenants(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/tenants/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}

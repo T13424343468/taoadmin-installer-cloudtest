@@ -38,6 +38,24 @@ export function deleteAnnouncement(id: string): Promise<void> {
   return request({ url: `/identity/announcements/${id}`, method: 'delete' });
 }
 
+/** 批量删除公告（软删） */
+export function batchDeleteAnnouncements(ids: string[]): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>({
+    url: '/identity/announcements/batch-delete',
+    method: 'post',
+    data: { ids: ids.map(Number) },
+  });
+}
+
+/** 批量上/下线 */
+export function batchSetAnnouncementStatus(ids: string[], online: boolean): Promise<{ updated: number }> {
+  return request<{ updated: number }>({
+    url: '/identity/announcements/batch-status',
+    method: 'post',
+    data: { ids: ids.map(Number), status: online ? 1 : 0 },
+  });
+}
+
 /** 登录用户可见的最新公告（顶栏通知入口） */
 export function getLatestAnnouncements(): Promise<AnnouncementItem[]> {
   return request({ url: '/identity/announcements/latest', method: 'get' });

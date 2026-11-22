@@ -6,6 +6,16 @@
         <template #icon><PlusOutlined /></template>
         新增角色
       </a-button>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'sys:role:delete'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
     </div>
 
     <a-table
@@ -15,6 +25,7 @@
       :pagination="pagination"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -124,12 +135,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
 import {
   getRolePage,
   saveRole,
   deleteRole,
+  batchDeleteRoles,
   assignRolePermissions,
   getRolePermissions,
   getMenuTree,
@@ -141,6 +154,27 @@ import {
 
 const loading = ref(false);
 const data = ref<RoleItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getRolePage({ pageIndex: 1, pageSize: 10000 });
+  return (res.items || []).map((r) => r.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已选中全部 ${selectedCount.value} 条角色`);
+}
 
 const pagination = reactive({
   current: 1,
@@ -167,6 +201,7 @@ async function loadData(pageIndex?: number) {
     const res = await getRolePage({ pageIndex: pagination.current, pageSize: pagination.pageSize });
     data.value = res.items || [];
     pagination.total = res.total || 0;
+    setTotal(res.total || 0);
   } finally {
     loading.value = false;
   }
@@ -218,6 +253,30 @@ async function onDelete(record: RoleItem) {
   await deleteRole(record.id);
   message.success('删除成功');
   loadData();
+}
+
+// ============ 批量删除 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除角色',
+    content: `确定删除选中的 ${ids.length} 个角色吗？其授权关系会一并清理。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const res = await batchDeleteRoles(ids);
+        message.success(`删除完成：成功 ${res.deleted} 条`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 // ============ 分配权限 ============
@@ -309,5 +368,9 @@ onMounted(async () => {
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 </style>

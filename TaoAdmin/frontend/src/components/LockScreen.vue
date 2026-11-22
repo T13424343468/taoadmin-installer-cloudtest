@@ -8,6 +8,7 @@
       <div class="lock-name">{{ userStore.nickname }}</div>
       <div class="lock-hint">{{ throttleLeft > 0 ? `输入错误次数过多，${throttleLeft} 秒后可重试` : '屏幕已锁定，请输入密码解锁' }}</div>
       <a-input-password
+        ref="passwordInput"
         v-model:value="password"
         class="lock-input"
         placeholder="请输入当前账号密码"
@@ -23,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useLockStore } from '@/stores/lock';
 import { useUserStore } from '@/stores/user';
 import { verifyPassword } from '@/api/auth';
@@ -33,11 +34,23 @@ const lock = useLockStore();
 const userStore = useUserStore();
 
 const password = ref('');
+const passwordInput = ref();
 const errorMessage = ref('');
 const unlocking = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const throttleLeft = ref(0);
+
+// 锁屏弹出后光标自动进密码框，解锁少一次点击
+watch(
+  () => lock.isLocked,
+  async (locked) => {
+    if (locked) {
+      await nextTick();
+      passwordInput.value?.focus?.();
+    }
+  },
+);
 
 const avatarUrl = computed(() => {
   const a = userStore.avatar;

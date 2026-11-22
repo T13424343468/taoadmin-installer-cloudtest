@@ -65,6 +65,34 @@ public class AnnouncementAppService(ISqlSugarClient db, SnowflakeIdGenerator sno
         await db.Updateable(row).ExecuteCommandAsync();
     }
 
+    /// <summary>批量删除公告（软删，返回实际删除数）</summary>
+    public async Task<int> BatchDeleteAsync(List<long> ids)
+    {
+        var now = DateTime.Now;
+        return await db.Updateable<SysAnnouncement>()
+            .SetColumns(a => new SysAnnouncement { IsDeleted = true, UpdatedAt = now })
+            .Where(a => ids.Contains(a.Id) && a.IsDeleted == false)
+            .ExecuteCommandAsync();
+    }
+
+    /// <summary>批量上/下线（返回实际更新数；上线时补发布时间）</summary>
+    public async Task<int> BatchSetStatusAsync(List<long> ids, bool online)
+    {
+        var now = DateTime.Now;
+        var rows = await db.Queryable<SysAnnouncement>()
+            .Where(a => ids.Contains(a.Id) && a.IsDeleted == false).ToListAsync();
+        var updated = 0;
+        foreach (var row in rows)
+        {
+            row.Status = online ? StatusPublished : StatusOffline;
+            row.UpdatedAt = now;
+            if (online) row.PublishTime = row.PublishTime ?? now;
+            await db.Updateable(row).ExecuteCommandAsync();
+            updated++;
+        }
+        return updated;
+    }
+
     /// <summary>分页查询（管理端：含已下线；keyword 按标题模糊，总数与明细同口径）</summary>
     public async Task<PageResult<AnnouncementItemDto>> PageAsync(int pageIndex, int pageSize, string? keyword)
     {

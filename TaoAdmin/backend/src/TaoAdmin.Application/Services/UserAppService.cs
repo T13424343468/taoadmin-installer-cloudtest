@@ -117,6 +117,34 @@ public class UserAppService
         await _users.DeleteRoleLinksAsync(id);
     }
 
+    /// <summary>批量删除用户（跳过当前登录账号，返回跳过数）</summary>
+    public async Task<int> BatchDeleteAsync(List<long> ids, long currentUserId)
+    {
+        var skipped = 0;
+        foreach (var id in ids.Distinct())
+        {
+            if (id == currentUserId) { skipped++; continue; }
+            await _users.SoftDeleteAsync(id);
+            await _users.DeleteRoleLinksAsync(id);
+        }
+        return skipped;
+    }
+
+    /// <summary>批量启用/停用用户（跳过当前登录账号，返回跳过数）</summary>
+    public async Task<int> BatchSetStatusAsync(List<long> ids, int status, long currentUserId)
+    {
+        var skipped = 0;
+        foreach (var id in ids.Distinct())
+        {
+            if (id == currentUserId) { skipped++; continue; }
+            var user = await _users.FindByIdAsync(id);
+            if (user == null) { skipped++; continue; }
+            user.Status = status;
+            await _users.UpdateProfileAsync(user);
+        }
+        return skipped;
+    }
+
     /// <summary>重置密码（密码按当前生效策略校验）</summary>
     public async Task ResetPasswordAsync(long id, string password)
     {

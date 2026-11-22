@@ -33,6 +33,24 @@ public class TenantController : BaseApiController
             req.tenantName, req.tenantCode, req.contact, req.remark, req.status);
         return ApiOk(string.IsNullOrEmpty(req.id) ? "新增成功" : "修改成功");
     }
+
+    /// <summary>删除租户（软删）</summary>
+    [HttpDelete("{id}")]
+    [Permission("sys:tenant:manage")]
+    public async Task<ApiResult<object>> Delete(string id)
+    {
+        await _svc.DeleteAsync(long.Parse(id));
+        return ApiOk("删除成功");
+    }
+
+    /// <summary>批量删除租户（软删，返回实际删除数）</summary>
+    [HttpPost("batch-delete")]
+    [Permission("sys:tenant:manage")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
 }
 
 /// <summary>站内消息入口：列表、已读、消息队列演示。</summary>
@@ -57,6 +75,22 @@ public class MessageController : BaseApiController
     {
         await _svc.MarkReadAsync(long.Parse(id));
         return ApiOk("已标记已读");
+    }
+
+    /// <summary>批量标记已读（返回实际更新数）</summary>
+    [HttpPost("batch-read")]
+    public async Task<ApiResult<object>> BatchRead([FromBody] BatchIdsRequest req)
+    {
+        var updated = await _svc.BatchMarkReadAsync(req.Ids);
+        return ApiOk<object>(new { updated }, "已批量标记已读");
+    }
+
+    /// <summary>批量删除消息（软删，返回实际删除数）</summary>
+    [HttpPost("batch-delete")]
+    public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
+    {
+        var deleted = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted }, "批量删除完成");
     }
 
     /// <summary>【消息队列演示】向指定主题发布一条测试消息，消费者收到后落库为站内消息</summary>
