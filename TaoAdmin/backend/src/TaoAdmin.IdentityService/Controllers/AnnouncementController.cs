@@ -61,13 +61,13 @@ public class AnnouncementController : BaseApiController
         return ApiOk<object>(new { deleted }, "批量删除完成");
     }
 
-    /// <summary>批量上/下线（online=true 上线，返回实际更新数）</summary>
+    /// <summary>批量上/下线（online=true 上线，返回实际更新数与失败明细）</summary>
     [HttpPost("batch-status")]
     [Permission("sys:notice:manage")]
     public async Task<ApiResult<object>> BatchStatus([FromBody] BatchStatusRequest req)
     {
-        var updated = await _svc.BatchSetStatusAsync(req.Ids, req.status == 1);
-        return ApiOk<object>(new { updated }, "批量操作完成");
+        var (updated, failed) = await _svc.BatchSetStatusAsync(req.Ids, req.status == 1);
+        return ApiOk<object>(new { updated, failed }, "批量操作完成");
     }
 
     /// <summary>登录用户可见的最新公告（仅已发布，顶栏通知入口拉取）</summary>

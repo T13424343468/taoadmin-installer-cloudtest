@@ -117,32 +117,61 @@ public class UserAppService
         await _users.DeleteRoleLinksAsync(id);
     }
 
-    /// <summary>批量删除用户（跳过当前登录账号，返回跳过数）</summary>
+    /// <summary>
+    /// 批量删除用户（强一致场景：整批一个事务，任一条失败全部回滚，全成全败；跳过当前登录账号）。
+    /// 依据老板 2026-11-22 21:07 令：用户删除连带清理用户角色关联，部分失败会留下带角色关联的已删用户，故必须事务。
+    /// </summary>
     public async Task<int> BatchDeleteAsync(List<long> ids, long currentUserId)
     {
         var skipped = 0;
-        foreach (var id in ids.Distinct())
+        try
         {
-            if (id == currentUserId) { skipped++; continue; }
-            await _users.SoftDeleteAsync(id);
-            await _users.DeleteRoleLinksAsync(id);
+            var result = await _db.Ado.UseTranAsync(async () =>
+            {
+                foreach (var id in ids.Distinct())
+                {
+                    if (id == currentUserId) { skipped++; continue; }
+                    await _users.SoftDeleteAsync(id);
+                    await _users.DeleteRoleLinksAsync(id);
+                }
+            });
+            if (!result.IsSuccess)
+                throw new DomainException($"批量删除用户失败，本次操作已全部回滚：{result.ErrorMessage}");
+        }
+        catch (DomainException) { throw; }
+        catch (Exception ex)
+        {
+            // UseTranAsync 回滚后异常可能原样重抛（随版本行为有异），统一转业务异常并注明已回滚
+            throw new DomainException($"批量删除用户失败，本次操作已全部回滚：{ex.Message}");
         }
         return skipped;
     }
 
-    /// <summary>批量启用/停用用户（跳过当前登录账号，返回跳过数）</summary>
-    public async Task<int> BatchSetStatusAsync(List<long> ids, int status, long currentUserId)
+    /// <summary>
+    /// 批量启用/停用用户（可容错场景：逐条执行互不影响，单条失败不中断整批，失败明细随返回汇报；跳过当前登录账号）。
+    /// 依据老板 2026-11-22 21:07 令：各用户状态互相独立，无需事务。
+    /// </summary>
+    public async Task<(int Skipped, List<string> Failed)> BatchSetStatusAsync(List<long> ids, int status, long currentUserId)
     {
         var skipped = 0;
+        var failed = new List<string>();
         foreach (var id in ids.Distinct())
         {
             if (id == currentUserId) { skipped++; continue; }
-            var user = await _users.FindByIdAsync(id);
-            if (user == null) { skipped++; continue; }
-            user.Status = status;
-            await _users.UpdateProfileAsync(user);
+            try
+            {
+                var user = await _users.FindByIdAsync(id);
+                if (user == null) { skipped++; continue; }
+                user.Status = status;
+                await _users.UpdateProfileAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // 单条失败照常走完剩余条目，失败原因随响应汇报（可容错口径，非静默吞）
+                failed.Add($"{id}: {ex.Message}");
+            }
         }
-        return skipped;
+        return (skipped, failed);
     }
 
     /// <summary>重置密码（密码按当前生效策略校验）</summary>
