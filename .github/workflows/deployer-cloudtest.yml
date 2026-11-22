@@ -149,12 +149,21 @@ jobs:
         shell: pwsh
         run: |
           TaoAdmin/deploy/windows/verify-functions.ps1
-      - name: Compose state after deploy
+      - name: Compose state and container logs after deploy
         if: always()
         continue-on-error: true
         shell: pwsh
         run: |
-          docker ps -a --format '{{.Names}} {{.Status}}' 2>$null | ForEach-Object { Write-Host "  container: $_" }
+          # Fresh Docker Desktop installs mid-job are not on the runner's fixed PATH.
+          $docker = 'docker'
+          if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            $docker = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
+          }
+          & $docker ps -a --format '{{.Names}} {{.Status}}' | ForEach-Object { Write-Host "  container: $_" }
+          foreach ($c in 'taoadmin-identity','taoadmin-task','taoadmin-taofiles','taoadmin-gateway') {
+            Write-Host "==== logs $c ===="
+            & $docker logs --tail 80 $c 2>&1 | ForEach-Object { Write-Host "  $_" }
+          }
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
