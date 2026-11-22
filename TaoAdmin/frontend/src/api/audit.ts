@@ -7,6 +7,8 @@ export interface LoginSecuritySettings {
   loginCaptchaRequired: boolean;
   captchaAfterFails: number;
   logRetentionDays: number;
+  /** 同账号互踢：开启后同一账号新登录踢掉旧会话 */
+  kickOnDuplicateLogin: boolean;
 }
 
 /** 登录验证码（SVG） */

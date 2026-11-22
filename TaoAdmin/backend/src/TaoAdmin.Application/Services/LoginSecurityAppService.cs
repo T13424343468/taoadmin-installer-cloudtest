@@ -7,9 +7,10 @@ using static TaoAdmin.Application.Services.LoginSecurityKeys;
 
 namespace TaoAdmin.Application.Services;
 
-/// <summary>登录安全设置：失败锁定阈值/时长、验证码开关与触发阈值、日志保留天数。</summary>
+/// <summary>登录安全设置：失败锁定阈值/时长、验证码开关与触发阈值、日志保留天数、同账号互踢开关。</summary>
 public record LoginSecuritySettings(
-    int LoginMaxFails, int LoginLockMinutes, bool LoginCaptchaRequired, int CaptchaAfterFails, int LogRetentionDays);
+    int LoginMaxFails, int LoginLockMinutes, bool LoginCaptchaRequired, int CaptchaAfterFails,
+    int LogRetentionDays, bool KickOnDuplicateLogin);
 
 /// <summary>登录安全策略读取口（供登录流程注入，测试可替换桩）。</summary>
 public interface ILoginSecurityProvider
@@ -30,6 +31,8 @@ public class LoginSecurityAppService(ISqlSugarClient db, SnowflakeIdGenerator sn
     public const bool DefaultCaptchaRequired = true;
     public const int DefaultCaptchaAfterFails = 0;
     public const int DefaultLogRetentionDays = 90;
+    /// <summary>同账号互踢默认关闭：保持现状，多端同时在线不受影响（老板 2026-11-22 对账项④口径）</summary>
+    public const bool DefaultKickOnDuplicateLogin = false;
 
     public const string CacheKey = "sys:login-security:v1";
 
@@ -45,19 +48,21 @@ public class LoginSecurityAppService(ISqlSugarClient db, SnowflakeIdGenerator sn
             .Where(c => c.IsDeleted == false && (
                 c.ConfigKey == LoginSecurityKeys.MaxFails || c.ConfigKey == LoginSecurityKeys.LockMinutes ||
                 c.ConfigKey == LoginSecurityKeys.CaptchaRequired || c.ConfigKey == LoginSecurityKeys.CaptchaAfterFails ||
-                c.ConfigKey == LoginSecurityKeys.LogRetentionDays))
+                c.ConfigKey == LoginSecurityKeys.LogRetentionDays || c.ConfigKey == LoginSecurityKeys.KickOnDuplicateLogin))
             .ToListAsync();
         int IntOf(string key, int def)
             => rows.FirstOrDefault(r => r.ConfigKey == key)?.ConfigValue is { Length: > 0 } v
                 && int.TryParse(v, out var n) ? n : def;
 
         var required = rows.FirstOrDefault(r => r.ConfigKey == LoginSecurityKeys.CaptchaRequired)?.ConfigValue;
+        var kick = rows.FirstOrDefault(r => r.ConfigKey == LoginSecurityKeys.KickOnDuplicateLogin)?.ConfigValue;
         var settings = new LoginSecuritySettings(
             Math.Max(IntOf(LoginSecurityKeys.MaxFails, DefaultMaxFails), 1),
             Math.Max(IntOf(LoginSecurityKeys.LockMinutes, DefaultLockMinutes), 1),
             required == null ? DefaultCaptchaRequired : required != "0",
             IntOf(LoginSecurityKeys.CaptchaAfterFails, DefaultCaptchaAfterFails),
-            Math.Max(IntOf(LoginSecurityKeys.LogRetentionDays, DefaultLogRetentionDays), 0));
+            Math.Max(IntOf(LoginSecurityKeys.LogRetentionDays, DefaultLogRetentionDays), 0),
+            kick == null ? DefaultKickOnDuplicateLogin : kick != "0");
         cache.Set(CacheKey, settings, CacheTtl);
         return settings;
     }
@@ -79,6 +84,7 @@ public class LoginSecurityAppService(ISqlSugarClient db, SnowflakeIdGenerator sn
         await UpsertAsync(LoginSecurityKeys.CaptchaRequired, req.LoginCaptchaRequired ? "1" : "0", "登录安全：验证码开关");
         await UpsertAsync(LoginSecurityKeys.CaptchaAfterFails, req.CaptchaAfterFails.ToString(), "登录安全：验证码触发阈值（0=每次都要）");
         await UpsertAsync(LoginSecurityKeys.LogRetentionDays, req.LogRetentionDays.ToString(), "日志保留天数（0=永久保留）");
+        await UpsertAsync(LoginSecurityKeys.KickOnDuplicateLogin, req.KickOnDuplicateLogin ? "1" : "0", "登录安全：同账号互踢开关（开启后新登录踢掉旧会话）");
 
         cache.Remove(CacheKey);
     }
@@ -111,6 +117,7 @@ public static class LoginSecurityKeys
     public const string CaptchaRequired = "loginCaptchaRequired";
     public const string CaptchaAfterFails = "captchaAfterFails";
     public const string LogRetentionDays = "logRetentionDays";
+    public const string KickOnDuplicateLogin = "kickOnDuplicateLogin";
 }
 
 /// <summary>短信发送口子（只埋不接线）：实现注册 NullSmsSender 占位，接真实通道时换实现。</summary>

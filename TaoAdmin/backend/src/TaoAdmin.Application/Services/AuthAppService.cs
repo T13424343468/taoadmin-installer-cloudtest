@@ -144,6 +144,11 @@ public class AuthAppService
         // 3. 登录成功：清零解锁
         _lockout.Clear(request.username);
 
+        // 同账号互踢（老板 2026-11-22 对账项④）：开关开启时，新登录吊销该用户全部旧会话，
+        // 旧端下次请求经 SessionRevocationMiddleware 命中吊销即 401；默认关闭保持多端并存现状。
+        if (security.KickOnDuplicateLogin)
+            _sessions.RevokeByUser(user.Id);
+
         var (roles, permissions, menus) = await _permission.GetUserAuthAsync(user.Id);
         var (token, _, sessionId) = _jwt.GenerateTokenWithSession(user.Id, user.UserName, roles, permissions, user.TenantId);
         _redis.SetString($"refresh_token:{user.Id}", _jwt.GenerateRefreshToken(), TimeSpan.FromDays(_jwt.RefreshExpireDays));
