@@ -137,6 +137,8 @@ services:
       - RabbitMq__HostName=rabbitmq
       - RabbitMq__UserName=taoadmin
       - RabbitMq__Password=${RABBITMQ_PASSWORD:-Rabbit@2026}
+    ports:
+      - "5001:5001"
     depends_on:
       mysql:
         condition: service_healthy
@@ -158,6 +160,8 @@ services:
       - ConnectionStrings__MySql=Server=mysql;Port=3306;Database=tao_admin;User ID=root;Password=${MYSQL_ROOT_PASSWORD:-Micro@2026};Character Set=utf8mb4;SslMode=none;AllowPublicKeyRetrieval=True;
       - ConnectionStrings__Redis=redis:6379,abortConnect=false
       - Elasticsearch__Uri=http://elasticsearch:9200
+    ports:
+      - "5002:5002"
     depends_on:
       mysql:
         condition: service_healthy
