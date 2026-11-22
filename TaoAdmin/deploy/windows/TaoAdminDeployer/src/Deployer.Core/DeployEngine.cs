@@ -880,7 +880,7 @@ public sealed class DeployEngine
 
     private async Task StepDockerHealth(CancellationToken ct)
     {
-        L("等待健康检查（网关/认证/任务/文件中心/前端，每项最多等 5 分钟）……");
+        L("等待健康检查（网关/认证/任务/文件中心/前端，每项最多等 15 分钟）……");
         var targets = new List<(string Name, string Url)>
         {
             ("网关", "http://127.0.0.1:5000/health"),
@@ -891,9 +891,9 @@ public sealed class DeployEngine
         };
         foreach (var (name, url) in targets)
         {
-            // 5 min each: first boot on an 8GB machine pulls/starts Nacos+ES-backed
-            // services, and 2 min was too tight for the gateway to come up.
-            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(5), ct))
+            // 15 min each: first boot runs CodeFirst table creation + seed data inserts
+            // (identity alone took >5 min on the CI runner); 8GB machines also pull/start Nacos+ES.
+            if (!await Net.Http.WaitOkAsync(url, TimeSpan.FromMinutes(15), ct))
                 throw new InvalidOperationException($"容器路线健康检查未通过: {name}（{url}）");
             L($"健康检查通过: {name}");
         }

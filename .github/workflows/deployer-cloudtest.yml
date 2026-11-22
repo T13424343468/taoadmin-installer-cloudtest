@@ -122,7 +122,7 @@ jobs:
           Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
           Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
       - name: E2E deploy (container route, real run via headless mode)
-        timeout-minutes: 60
+        timeout-minutes: 80
         shell: pwsh
         run: |
           $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
