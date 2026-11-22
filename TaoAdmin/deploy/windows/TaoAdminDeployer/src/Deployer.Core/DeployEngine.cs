@@ -776,6 +776,11 @@ public sealed class DeployEngine
         // Domestic registry mirrors so image pulls never depend on a VPN.
         // Covers compose images AND Dockerfile FROM layers (all docker.io).
         EnsureDockerMirrorConfig(ct);
+        // Real-machine pitfall: after the mirror restart — or on a manual retry right
+        // after Docker was killed/closed — compose can run while the engine pipe is
+        // gone ("The system cannot find the file specified"). Probe first, start
+        // Docker Desktop if needed, and only then run compose.
+        await EnsureDockerEngineReadyAsync(ct);
         L("容器路线：docker compose 一键拉起全部服务……");
         var r = await ProcessRunner.RunAsync("docker", "compose up -d", workingDirectory: _p.ComposeDir, onLine: Out, ct: ct);
         if (!r.Success)
@@ -789,6 +794,21 @@ public sealed class DeployEngine
             var detail = tail.Length > 0 ? "：" + tail : "（无输出，常见原因：网络拉不动镜像或 compose 文件缺失，详见日志）";
             throw new InvalidOperationException($"docker compose up 失败（exit={r.ExitCode}）{detail}");
         }
+    }
+
+    private async Task EnsureDockerEngineReadyAsync(CancellationToken ct)
+    {
+        var probe = await ProcessRunner.RunAsync("docker", "info --format '{{.OSType}}'", onLine: null, ct: ct);
+        if (probe.Success) return;
+
+        L("Docker 引擎未就绪，启动 Docker Desktop 并等待（最长 5 分钟）……");
+        var dd = @"C:\Program Files\Docker\Docker\Docker Desktop.exe";
+        if (File.Exists(dd))
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dd) { UseShellExecute = true });
+        var ready = await Net.Ports.WaitDockerEngineAsync(TimeSpan.FromMinutes(5), ct);
+        if (!ready)
+            throw new InvalidOperationException("Docker 引擎 5 分钟内未就绪。请手动打开 Docker Desktop，等它启动完成后点「重试」继续");
+        L("Docker 引擎已就绪");
     }
 
     private static readonly string[] DockerMirrors =

@@ -1,5 +1,4 @@
-﻿version: "3.8"
-
+﻿
 # TaoAdmin 一键编排：先起基础设施（MySQL/Redis/Nacos/ES/Kibana），再起应用服务
 # 使用：docker compose up -d
 # 建议先在 Nacos 控制台导入各服务配置（见 nacos/README.md）
