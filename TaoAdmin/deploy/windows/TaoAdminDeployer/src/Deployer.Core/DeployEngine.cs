@@ -781,8 +781,12 @@ public sealed class DeployEngine
         // gone ("The system cannot find the file specified"). Probe first, start
         // Docker Desktop if needed, and only then run compose.
         await EnsureDockerEngineReadyAsync(ct);
-        L("容器路线：docker compose 一键拉起全部服务……");
-        var r = await ProcessRunner.RunAsync("docker", "compose up -d", workingDirectory: _p.ComposeDir, onLine: Out, ct: ct);
+        L("容器路线：docker compose 一键拉起全部服务（按当前源码重建镜像）……");
+        // Real-machine pitfall (2026-11-22): plain `up -d` reuses images built by an
+        // earlier run from older sources, so source fixes never reach the containers
+        // (TaskService kept crashing on a stale image). Always rebuild so the images
+        // match the sources shipped in this package; unchanged layers stay cached.
+        var r = await ProcessRunner.RunAsync("docker", "compose up -d --build", workingDirectory: _p.ComposeDir, onLine: Out, ct: ct);
         if (!r.Success)
         {
             // Surface the real reason (pull failure, build error, port conflict…)
