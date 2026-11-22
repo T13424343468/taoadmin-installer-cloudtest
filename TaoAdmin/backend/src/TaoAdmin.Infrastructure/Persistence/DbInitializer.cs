@@ -20,7 +20,8 @@ public static class DbInitializer
         db.CodeFirst.InitTables(typeof(SysUser), typeof(SysRole), typeof(SysMenu), typeof(SysUserRole), typeof(SysRoleMenu), typeof(SysRoleApi), typeof(SysApi),
             typeof(SysTenant), typeof(SysMessage), typeof(SysWorkflow), typeof(SysWorkflowInstance), typeof(SysWorkflowTask),
             typeof(SysDictType), typeof(SysDictData), typeof(SysOperationLog), typeof(SysSiteConfig), typeof(SysAnnouncement),
-            typeof(TaoAdmin.Domain.Entities.SysFile));
+            typeof(TaoAdmin.Domain.Entities.SysFile), typeof(TaoAdmin.Domain.Entities.SysRegion),
+            typeof(TaoAdmin.Domain.Entities.SysRegionMeta));
 
         if (db.Queryable<SysUser>().Count() == 0)
             SeedBase(db, snowflake);
@@ -31,6 +32,8 @@ public static class DbInitializer
             SeedMessages(db, snowflake);
         SeedWorkflows(db, snowflake);
         SeedDicts(db, snowflake);
+        SeedRegions(db, snowflake);
+        SeedRegionMenu(db, snowflake);
         SeedSiteConfigMenu(db, snowflake);
         SeedOnlineUsersMenu(db, snowflake);
         SeedAnnouncementMenu(db, snowflake);
@@ -436,6 +439,44 @@ public static class DbInitializer
             new() { Id = NewId(), Title = "系统更新通知", Content = "本次更新新增：消息队列、工作流引擎、多租户支持。", Topic = "system.notice", ReceiverId = 0, IsRead = false, CreatedAt = now.AddHours(-2), UpdatedAt = now.AddHours(-2) },
             new() { Id = NewId(), Title = "数据备份完成", Content = "每日数据库自动备份已完成，无异常。", Topic = "system.notice", ReceiverId = 0, IsRead = true, CreatedAt = now.AddDays(-1), UpdatedAt = now.AddDays(-1) },
         }).ExecuteCommand();
+    }
+
+    /// <summary>行政区划数据导入（幂等）：数据包随程序集内嵌，sys_region 为空时整包导入（老板 2026-11-22 21:02 令⑪）</summary>
+    private static void SeedRegions(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
+        => Persistence.RegionDataImporter.ImportIfEmpty(snowflake, db);
+
+    /// <summary>行政区划查看页菜单种子（幂等，挂系统管理目录下；含更新按钮权限，页面本身只读）</summary>
+    private static void SeedRegionMenu(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
+    {
+        var sysDir = db.Queryable<SysMenu>().First(m => m.MenuName == "系统管理" && m.ParentId == 0);
+        if (sysDir == null)
+            return;
+
+        var now = DateTime.Now;
+        if (!db.Queryable<SysMenu>().Any(m => m.Component == "system/region/index"))
+        {
+            var menu = new SysMenu { Id = snowflake.NextId(), ParentId = sysDir.Id, MenuName = "行政区划", MenuType = 1, Path = "/system/region", Component = "system/region/index", OrderNum = 14, Visible = true, Status = 1, CreatedAt = now, UpdatedAt = now };
+            var perm = new SysMenu { Id = snowflake.NextId(), ParentId = menu.Id, MenuName = "区划数据更新", MenuType = 2, PermsCode = "sys:region:manage", OrderNum = 1, Status = 1, CreatedAt = now, UpdatedAt = now };
+            db.Insertable(new List<SysMenu> { menu, perm }).ExecuteCommand();
+
+            var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
+            if (adminRole != null)
+                db.Insertable(new List<SysRoleMenu>
+                {
+                    new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now },
+                    new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = perm.Id, CreatedAt = now, UpdatedAt = now }
+                }).ExecuteCommand();
+        }
+        else if (!db.Queryable<SysMenu>().Any(m => m.PermsCode == "sys:region:manage"))
+        {
+            // 老库补按钮权限：菜单已存在而更新权限缺失时补插
+            var menu = db.Queryable<SysMenu>().First(m => m.Component == "system/region/index");
+            var perm = new SysMenu { Id = snowflake.NextId(), ParentId = menu.Id, MenuName = "区划数据更新", MenuType = 2, PermsCode = "sys:region:manage", OrderNum = 1, Status = 1, CreatedAt = now, UpdatedAt = now };
+            db.Insertable(perm).ExecuteCommand();
+            var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
+            if (adminRole != null)
+                db.Insertable(new SysRoleMenu { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = perm.Id, CreatedAt = now, UpdatedAt = now }).ExecuteCommand();
+        }
     }
 
     /// <summary>

@@ -133,6 +133,20 @@ builder.Services.AddScoped<TaoAdmin.Common.Storage.IFileStorageProvider>(sp =>
 // 密码策略：应用服务本身即策略读取口（改密/建人/登录注入同一实现）
 builder.Services.AddScoped<PasswordPolicyAppService>();
 builder.Services.AddScoped<IPasswordPolicyProvider>(sp => sp.GetRequiredService<PasswordPolicyAppService>());
+// 行政区划（⑪地址库）：只读查询 + 后台更新（在线抓取民政部国家地名信息库，内置数据包兜底）
+builder.Services.AddScoped<RegionAppService>();
+builder.Services.AddHttpClient(TaoAdmin.Infrastructure.Persistence.McaRegionDataSource.ClientName, client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+builder.Services.AddSingleton<TaoAdmin.Infrastructure.Persistence.McaRegionDataSource>(sp =>
+    new TaoAdmin.Infrastructure.Persistence.McaRegionDataSource(
+        sp.GetRequiredService<System.Net.Http.IHttpClientFactory>().CreateClient(TaoAdmin.Infrastructure.Persistence.McaRegionDataSource.ClientName),
+        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TaoAdmin.Infrastructure.Persistence.McaRegionDataSource>>()));
+builder.Services.AddSingleton<TaoAdmin.Application.Services.IRegionDataSource>(sp => sp.GetRequiredService<TaoAdmin.Infrastructure.Persistence.McaRegionDataSource>());
+builder.Services.AddSingleton<TaoAdmin.Application.Services.IRegionPackageProvider, TaoAdmin.Infrastructure.Persistence.BuiltinRegionPackageProvider>();
+builder.Services.AddSingleton<TaoAdmin.Application.Services.RegionWriteService>();
+builder.Services.AddSingleton<TaoAdmin.Application.Services.RegionUpdateService>();
 // 接口文档：官方内置 OpenAPI + Scalar UI
 builder.Services.AddOpenApi("v1", o =>
     o.AddDocumentTransformer((doc, ctx, ct) =>
