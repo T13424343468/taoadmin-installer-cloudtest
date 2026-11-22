@@ -62,7 +62,7 @@
         </a-form-item>
       </a-form>
 
-      <div class="login-tip">默认账号：admin / admin123</div>
+      <div class="login-tip">默认账号：admin / Admin@123</div>
     </div>
   </div>
 </template>

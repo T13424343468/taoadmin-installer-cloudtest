@@ -30,6 +30,8 @@
       placement="left"
       :width="264"
       :closable="false"
+      class="sider-drawer"
+      :body-style="{ padding: 0, 'overflow-y': 'auto' }"
       @close="siderDrawerOpen = false"
     >
       <div class="logo">
@@ -47,7 +49,7 @@
       />
     </a-drawer>
 
-    <a-layout>
+    <a-layout class="app-main">
       <!-- 顶栏 -->
       <a-layout-header class="app-header" :class="{ 'app-header-dark': themeStore.isDark }">
         <div class="header-left">
@@ -160,22 +162,30 @@
         </div>
       </a-layout-header>
 
-      <!-- 内容区：多页签导航 + keep-alive 缓存已访问页面 -->
+      <!-- 内容区：多页签导航 + keep-alive 缓存已访问页面；页签支持右键批量关闭 -->
       <div class="tab-bar" :class="{ 'tab-bar-dark': themeStore.isDark }">
-        <div
-          v-for="tab in tabsStore.tabs"
-          :key="tab.path"
-          class="tab-item"
-          :class="{ active: tab.path === tabsStore.active }"
-          @click="onTabClick(tab.path)"
-        >
-          <span class="tab-title">{{ tab.title }}</span>
-          <close-outlined
-            v-if="!tab.affix"
-            class="tab-close"
-            @click.stop="onTabClose(tab.path)"
-          />
-        </div>
+        <a-dropdown v-for="tab in tabsStore.tabs" :key="tab.path" :trigger="['contextMenu']">
+          <div
+            class="tab-item"
+            :class="{ active: tab.path === tabsStore.active }"
+            @click="onTabClick(tab.path)"
+          >
+            <span class="tab-title">{{ tab.title }}</span>
+            <close-outlined
+              v-if="!tab.affix"
+              class="tab-close"
+              @click.stop="onTabClose(tab.path)"
+            />
+          </div>
+          <template #overlay>
+            <a-menu @click="onTabMenuClick($event.key, tab.path)">
+              <a-menu-item key="closeLeft" :disabled="closableLeftCount(tab.path) === 0">关闭左侧</a-menu-item>
+              <a-menu-item key="closeRight" :disabled="closableRightCount(tab.path) === 0">关闭右侧</a-menu-item>
+              <a-menu-item key="closeOthers" :disabled="closableOthersCount(tab.path) === 0">关闭其他</a-menu-item>
+              <a-menu-item key="closeAll" :disabled="closableAllCount() === 0">全部关闭</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
       <a-layout-content class="app-content" :class="{ 'app-content-dark': themeStore.isDark }">
         <router-view v-slot="{ Component, route: viewRoute }">
@@ -349,14 +359,22 @@ const selectedKeys = ref<string[]>([route.path]);
 const openKeys = ref<string[]>([]);
 
 /**
- * 将后端菜单树转为 a-menu items
- * Visible=false 的菜单（meta.hidden=true）不渲染到侧边栏，
- * 但路由仍然存在（见 router/index.ts 注释），可通过 URL 直接访问。
+ * 图标扩展表：菜单图标名 → 图标库实际组件名。
+ * 图标库没有的语义名（如 Timer）在这里登记一行即可生效，无需改菜单数据——
+ * 图标解析支持扩展，新增映射走这张表（老板令 2026-11-22）。
  */
+const ICON_EXTENSIONS: Record<string, string> = {
+  Timer: 'ClockCircleOutlined',
+};
+
 function renderIcon(name?: string) {
   if (!name) return undefined;
-  // 菜单图标库存的是语义名（如 Setting/FolderOpen），图标组件实际导出 XxxOutlined
-  const icon = (AntIcons as any)[name] || (AntIcons as any)[`${name}Outlined`];
+  // 菜单图标库存的是语义名（如 Setting/FolderOpen），图标组件实际导出 XxxOutlined；
+  // 库里查不到时按扩展表换算，仍无则不渲染（不报错）
+  const icon =
+    (AntIcons as any)[name] ||
+    (AntIcons as any)[`${name}Outlined`] ||
+    (ICON_EXTENSIONS[name] ? (AntIcons as any)[ICON_EXTENSIONS[name]] : undefined);
   return icon ? () => h(icon) : undefined;
 }
 
@@ -398,11 +416,11 @@ function toMenuItems(nodes: MenuNode[]): ItemType[] {
 
 // ============ 多页签导航 ============
 
-/** 路由进入时同步页签（hidden 页面不入栈，T4-18） */
+/** 路由进入时同步页签：除登录/404 外，布局内页面统一开页签（hidden 只管侧边栏显隐，老板反馈③统一补齐） */
 watch(
   () => route.fullPath,
   () => {
-    if (route.meta?.hidden) return;
+    if (route.name === 'Login' || route.name === 'NotFound') return;
     const title = route.meta?.title as string | undefined;
     if (title) tabsStore.openTab(route.path, title);
   },
@@ -418,6 +436,51 @@ function onTabClose(path: string) {
   const wasActive = tabsStore.active === path;
   tabsStore.closeTab(path);
   if (wasActive) router.push(tabsStore.active);
+}
+
+// ============ 页签右键批量关闭（老板反馈②） ============
+
+/** 锚点左侧可关闭页签数 */
+function closableLeftCount(path: string): number {
+  const idx = tabsStore.tabs.findIndex((t) => t.path === path);
+  return tabsStore.tabs.slice(0, Math.max(idx, 0)).filter((t) => !t.affix).length;
+}
+
+/** 锚点右侧可关闭页签数 */
+function closableRightCount(path: string): number {
+  const idx = tabsStore.tabs.findIndex((t) => t.path === path);
+  return idx < 0 ? 0 : tabsStore.tabs.slice(idx + 1).filter((t) => !t.affix).length;
+}
+
+/** 除锚点与固定页签外可关闭页签数 */
+function closableOthersCount(path: string): number {
+  return tabsStore.tabs.filter((t) => !t.affix && t.path !== path).length;
+}
+
+/** 全部可关闭页签数 */
+function closableAllCount(): number {
+  return tabsStore.tabs.filter((t) => !t.affix).length;
+}
+
+function onTabMenuClick(action: string, path: string) {
+  switch (action) {
+    case 'closeLeft':
+      tabsStore.closeLeft(path);
+      break;
+    case 'closeRight':
+      tabsStore.closeRight(path);
+      break;
+    case 'closeOthers':
+      tabsStore.closeOthers(path);
+      break;
+    case 'closeAll':
+      tabsStore.closeAll();
+      break;
+    default:
+      return;
+  }
+  // 批量关闭后激活页签可能变化，路由跟着走
+  if (route.path !== tabsStore.active) router.push(tabsStore.active);
 }
 
 function onMenuClick({ key }: { key: string }) {
@@ -498,11 +561,32 @@ async function onForceChangePwd() {
 </script>
 
 <style scoped lang="less">
+/* 全局原则（老板反馈①④）：整页固定一屏高，任何情况不出最外层滚动条；
+   侧边栏与内容区各自内部滚动 */
 .app-layout {
   height: 100vh;
+  overflow: hidden;
+}
+
+/* 主区（顶栏+页签栏+内容+页脚）纵向排布，内容区弹性占满并内部滚动 */
+.app-main {
+  height: 100vh;
+  overflow: hidden;
+
+  > .app-header,
+  > .tab-bar {
+    flex-shrink: 0;
+  }
 }
 
 .app-sider {
+  /* 侧边栏固定一屏高，菜单超出内部滚动 */
+  :deep(.ant-layout-sider-children) {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .logo {
     display: flex;
     align-items: center;
@@ -624,7 +708,10 @@ async function onForceChangePwd() {
 
 .app-content {
   margin: 12px 16px 16px;
-  min-height: auto;
+  /* 内容区固定一屏内的高度，超出内部滚动；分页列表再自滚（老板反馈①） */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 
   > * {
     background: #fff;

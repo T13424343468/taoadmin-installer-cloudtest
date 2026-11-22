@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Configuration;
-using System.Text.RegularExpressions;
 using TaoAdmin.Application.Dtos;
 
 namespace TaoAdmin.Application.Services;
@@ -69,7 +68,7 @@ public class MonitorAppService
         return result;
     }
 
-    /// <summary>分页查询本地 JSON 日志（倒序）</summary>
+    /// <summary>分页查询本地 JSON 日志（倒序）：聚合目录下全部服务的日志文件，按服务名过滤。</summary>
     public Task<(long Total, List<LogItemDto> Items)> GetLogsAsync(
         int pageIndex, int pageSize, string? level, string? service, string? keyword)
     {
@@ -80,10 +79,13 @@ public class MonitorAppService
         {
             foreach (var file in Directory.EnumerateFiles(dir, "*.jsonl").OrderByDescending(f => f))
             {
+                // 服务来源：优先取行内 Service 属性，取不到时用文件名（各服务分文件写日志，如 gateway.jsonl）
+                var fallbackService = Path.GetFileNameWithoutExtension(file);
                 foreach (var line in File.ReadLines(file))
                 {
-                    var item = ParseLine(line);
-                    if (item == null) continue;
+                    var parsed = SerilogLineParser.Parse(line);
+                    if (parsed == null) continue;
+                    var item = ToDto(parsed, fallbackService);
                     if (!string.IsNullOrEmpty(level) && !string.Equals(item.level, level, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!string.IsNullOrEmpty(service) && !item.service.Contains(service, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!string.IsNullOrEmpty(keyword) && !item.message.Contains(keyword, StringComparison.OrdinalIgnoreCase)) continue;
@@ -97,38 +99,18 @@ public class MonitorAppService
         return Task.FromResult((total, items));
     }
 
-    /// <summary>解析 Serilog JSON 日志行（Compact 格式）</summary>
-    private static LogItemDto? ParseLine(string line)
+    private static LogItemDto ToDto(SerilogLogEntry parsed, string fallbackService) => new()
     {
-        try
-        {
-            var json = System.Text.Json.JsonDocument.Parse(line).RootElement;
-            var level = json.TryGetProperty("Level", out var lv) ? ShortLevel(lv.GetString() ?? "") : "INFO";
-            var ts = json.TryGetProperty("@t", out var t) ? t.GetString() : null;
-            var msg = json.TryGetProperty("@m", out var m) ? m.GetString() : "";
-            var ex = json.TryGetProperty("@x", out var x) && x.ValueKind != System.Text.Json.JsonValueKind.Null ? x.GetString() : null;
-            var thread = json.TryGetProperty("ThreadId", out var th) ? th.GetString() : null;
-            var traceId = json.TryGetProperty("TraceId", out var tr) ? tr.GetString() : null;
-            var service = json.TryGetProperty("Service", out var sv) ? sv.GetString() : Path.GetFileNameWithoutExtension(json.TryGetProperty("@l", out _) ? "app" : "app");
-            var logger = json.TryGetProperty("@l", out var lg) ? lg.GetString() : null;
-            return new LogItemDto
-            {
-                id = $"{ts}-{thread}",
-                timestamp = ts ?? string.Empty,
-                level = level,
-                service = service ?? "unknown",
-                traceId = traceId,
-                thread = thread,
-                logger = logger,
-                message = msg ?? string.Empty,
-                exception = ex
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
+        id = $"{parsed.Timestamp}-{parsed.Thread}",
+        timestamp = parsed.Timestamp,
+        level = parsed.Level,
+        service = parsed.Service ?? fallbackService,
+        traceId = parsed.TraceId,
+        thread = parsed.Thread,
+        logger = parsed.Logger,
+        message = parsed.Message,
+        exception = parsed.Exception
+    };
 
     private static string ShortLevel(string raw) => raw switch
     {

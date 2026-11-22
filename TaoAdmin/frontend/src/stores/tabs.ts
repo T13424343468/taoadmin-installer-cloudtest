@@ -78,5 +78,29 @@ export const useTabsStore = defineStore('tabs', {
         persist(this.tabs, this.active);
       }
     },
+    /** 关闭左侧全部可关闭页签（固定页签保留），激活转到锚点页签 */
+    closeLeft(path: string) {
+      const idx = this.tabs.findIndex((t) => t.path === path);
+      if (idx <= 0) return;
+      this.tabs = this.tabs.filter((t, i) => i >= idx || t.affix);
+      this.activate(path);
+    },
+    /** 关闭右侧全部可关闭页签（固定页签保留），激活转到锚点页签 */
+    closeRight(path: string) {
+      const idx = this.tabs.findIndex((t) => t.path === path);
+      if (idx < 0) return;
+      this.tabs = this.tabs.filter((t, i) => i <= idx || t.affix);
+      this.activate(path);
+    },
+    /** 关闭除锚点与固定页签外的全部页签 */
+    closeOthers(path: string) {
+      this.tabs = this.tabs.filter((t) => t.affix || t.path === path);
+      this.activate(path);
+    },
+    /** 全部关闭：只留固定页签，回到首页 */
+    closeAll() {
+      this.tabs = this.tabs.filter((t) => t.affix);
+      this.activate(HOME_TAB.path);
+    },
   },
 });

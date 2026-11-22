@@ -12,6 +12,8 @@ using Quartz.Impl;
 using Quartz.Spi;
 using SqlSugar;
 using Serilog;
+using TaoAdmin.Infrastructure.Persistence;
+using TaoAdmin.Infrastructure.Web;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -99,6 +101,8 @@ var app = builder.Build();
 app.UseAuthentication();
 app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "taoadmin-task" }));
 app.UseAuthorization();
+// 接口鉴权：按 SysApi 权限码校验（超管放行）
+app.UseMiddleware<TaoAdmin.Infrastructure.Web.ApiAuthMiddleware>();
 app.MapOpenApi(); // /openapi/v1.json
 app.MapScalarApiReference(c => c.WithTitle("TaoAdmin 任务服务")); // /scalar 可视化文档
 app.MapControllers();
@@ -108,6 +112,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ISqlSugarClient>();
     db.CodeFirst.InitTables(typeof(SysJob));
+    // 与 IdentityService 同库：幂等初始化 + 扫描本服务控制器接口增量登记进 SysApi
+    DbInitializer.Initialize(db, scope.ServiceProvider.GetRequiredService<SnowflakeIdGenerator>(), typeof(Program).Assembly);
     if (db.Queryable<SysJob>().Count() == 0)
     {
         await db.Insertable(new SysJob

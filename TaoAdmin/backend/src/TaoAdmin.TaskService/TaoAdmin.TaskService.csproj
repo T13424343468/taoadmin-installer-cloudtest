@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TaoAdmin.Application\TaoAdmin.Application.csproj" />
+    <ProjectReference Include="..\TaoAdmin.Infrastructure\TaoAdmin.Infrastructure.csproj" />
     <ProjectReference Include="..\TaoAdmin.Common\TaoAdmin.Common.csproj" />
     <ProjectReference Include="..\TaoAdmin.Utilities\TaoAdmin.Utilities.csproj" />
   </ItemGroup>

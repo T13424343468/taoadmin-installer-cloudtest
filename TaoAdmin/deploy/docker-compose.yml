@@ -115,6 +115,9 @@ services:
       - Elasticsearch__Uri=http://elasticsearch:9200
     ports:
       - "5000:5000"
+    volumes:
+      # 共享日志卷：与 identity/task 同卷，日志中心可聚合读取（老板反馈⑦）
+      - service-logs:/app/logs
     depends_on:
       nacos:
         condition: service_healthy
@@ -137,6 +140,13 @@ services:
       - RabbitMq__HostName=rabbitmq
       - RabbitMq__UserName=taoadmin
       - RabbitMq__Password=${RABBITMQ_PASSWORD:-Rabbit@2026}
+      # 服务监控探测地址：容器内 localhost 指自身，必须用容器网络地址覆盖（老板反馈⑥，勿用 localhost 探网关/任务）
+      - Monitor__Services__gateway=http://gateway:5000
+      - Monitor__Services__identity=http://localhost:5001
+      - Monitor__Services__task=http://task:5002
+    volumes:
+      # 共享日志卷：三个服务都写 /app/logs，日志中心聚合读取（老板反馈⑦）
+      - service-logs:/app/logs
     ports:
       - "5001:5001"
     depends_on:
@@ -162,6 +172,9 @@ services:
       - Elasticsearch__Uri=http://elasticsearch:9200
     ports:
       - "5002:5002"
+    volumes:
+      # 共享日志卷：与 identity/gateway 同卷，日志中心可聚合读取（老板反馈⑦）
+      - service-logs:/app/logs
     depends_on:
       mysql:
         condition: service_healthy
@@ -200,3 +213,4 @@ volumes:
   redis-data:
   es-data:
   rabbitmq-data:
+  service-logs:

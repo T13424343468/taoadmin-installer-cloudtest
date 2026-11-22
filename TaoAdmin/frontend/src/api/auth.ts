@@ -54,6 +54,15 @@ export function login(params: LoginParams): Promise<LoginResult> {
   });
 }
 
+/** 锁屏解锁：复核当前账号登录密码（已登录会话内调用，不重发令牌） */
+export function verifyPassword(password: string): Promise<void> {
+  return request<void>({
+    url: '/identity/auth/verify-password',
+    method: 'post',
+    data: { password },
+  });
+}
+
 /** 获取当前登录用户信息 + 权限码 + 菜单树 */
 export function getUserInfo(): Promise<UserInfo> {
   return request<UserInfo>({

@@ -26,7 +26,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useLockStore } from '@/stores/lock';
 import { useUserStore } from '@/stores/user';
-import { login } from '@/api/auth';
+import { verifyPassword } from '@/api/auth';
 import { buildFileUrl } from '@/api/taoFiles';
 
 const lock = useLockStore();
@@ -66,10 +66,9 @@ async function onUnlock() {
   unlocking.value = true;
   const beforeThrottle = lock.throttleLeft() > 0;
   try {
-    await lock.unlock(async (username: string, pwd: string) => {
-      // 真实鉴权：复用登录接口；成功由组件层落新 token（后端重发会话）
-      const result = await login({ username, password: pwd });
-      userStore.setTokenValue(result.token);
+    await lock.unlock(async (_username: string, pwd: string) => {
+      // 真实鉴权：复核当前账号登录密码（不走验证码；失败照常进后端锁定账本）
+      await verifyPassword(pwd);
     }, userStore.userInfo?.username || '', password.value);
     if (!lock.isLocked) {
       password.value = '';
@@ -77,7 +76,7 @@ async function onUnlock() {
     } else if (!beforeThrottle && lock.throttleLeft() > 0) {
       errorMessage.value = '输入错误次数过多，请稍后重试';
     } else {
-      errorMessage.value = '密码不正确，请重试';
+      errorMessage.value = lock.lastError || '密码不正确，请重试';
     }
   } catch {
     errorMessage.value = '网络异常，请稍后重试';

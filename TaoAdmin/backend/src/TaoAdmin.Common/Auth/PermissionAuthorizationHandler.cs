@@ -54,4 +54,17 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
         // 不调用 Succeed 即视为拒绝
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// 接口级授权判定（供 ApiAuthMiddleware 使用）：按 SysApi 记录（路径+HTTP 方法）
+    /// 找到接口的权限码，与用户权限码集合匹配。命中返回 true。
+    /// 超管直接放行；接口未登记或权限码为空返回 false（由调用方决定策略）。
+    /// </summary>
+    public static bool HasApiPermission(System.Security.Claims.ClaimsPrincipal? user, string? apiPermsCode)
+    {
+        if (string.IsNullOrEmpty(apiPermsCode)) return false;
+        if (user?.Identity == null || !user.Identity.IsAuthenticated) return false;
+        if (user.IsInRole(SuperAdminRole)) return true;
+        return user.FindAll(PermClaimType).Any(c => string.Equals(c.Value, apiPermsCode, StringComparison.OrdinalIgnoreCase));
+    }
 }

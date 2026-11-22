@@ -32,6 +32,14 @@ public class AuthController : BaseApiController
     public async Task<ApiResult<CurrentUserDto>> CurrentUser()
         => ApiOk(await _auth.GetCurrentUserAsync(User.GetUserId()));
 
+    /// <summary>锁屏解锁：复核当前账号登录密码（已登录会话内调用，不重发令牌、不走验证码）</summary>
+    [HttpPost("verify-password")]
+    public async Task<ApiResult<object>> VerifyPassword([FromBody] VerifyPasswordRequest request)
+    {
+        await _auth.VerifyPasswordAsync(User.GetUserId(), request.password);
+        return ApiOk("密码正确");
+    }
+
     /// <summary>退出登录（吊销当前会话并清理刷新令牌）</summary>
     [HttpPost("logout")]
     public async Task<ApiResult<object>> Logout()

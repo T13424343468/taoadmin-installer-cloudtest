@@ -21,6 +21,12 @@ public class LoginResult
     public string token { get; set; } = string.Empty;
 }
 
+/// <summary>锁屏解锁请求（复核当前账号登录密码，不重发令牌）</summary>
+public class VerifyPasswordRequest
+{
+    public string password { get; set; } = string.Empty;
+}
+
 /// <summary>菜单树节点（类型字符串：dir/menu/button）</summary>
 public class MenuNodeDto
 {

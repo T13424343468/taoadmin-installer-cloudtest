@@ -15,6 +15,8 @@ export const useLockStore = defineStore('lock', {
     isLocked: false as boolean,
     attempts: 0,
     throttledUntil: null as number | null,
+    /** 最近一次解锁失败的原因（后端原话，如账号锁定剩余分钟），供组件层展示 */
+    lastError: '' as string,
   }),
   actions: {
     /** 恢复会话锁态（layout mounted 时调用） */
@@ -29,6 +31,7 @@ export const useLockStore = defineStore('lock', {
       this.isLocked = true;
       this.attempts = 0;
       this.throttledUntil = null;
+      this.lastError = '';
       try {
         sessionStorage.setItem(LOCK_STORAGE_KEY, '1');
       } catch {
@@ -53,13 +56,15 @@ export const useLockStore = defineStore('lock', {
         this.isLocked = false;
         this.attempts = 0;
         this.throttledUntil = null;
+        this.lastError = '';
         try {
           sessionStorage.removeItem(LOCK_STORAGE_KEY);
         } catch {
           // 忽略
         }
-      } catch {
+      } catch (e) {
         this.attempts += 1;
+        this.lastError = e instanceof Error && e.message ? e.message : '';
         if (this.attempts >= MAX_ATTEMPTS) {
           this.throttledUntil = Date.now() + THROTTLE_SECONDS * 1000;
           this.attempts = 0;

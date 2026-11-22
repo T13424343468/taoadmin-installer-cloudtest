@@ -174,6 +174,9 @@ app.UseAuthentication();
 // 会话吊销校验：强制下线后令牌即刻失效（依赖认证结果，须在 UseAuthentication 之后）
 app.UseMiddleware<TaoAdmin.IdentityService.Middleware.SessionRevocationMiddleware>();
 app.UseAuthorization();
+// 接口级授权（增强层）：按 SysApi 登记（路径+HTTP 方法）叠加校验角色-接口授权，
+// 未登记接口/匿名接口/超管直接放行，与权限码级校验两道都过才放行
+app.UseMiddleware<TaoAdmin.Infrastructure.Web.ApiAuthMiddleware>();
 // 多租户：解析当前租户（X-Tenant-Id 头 / JWT tenant_id 声明），供全局数据过滤使用
 app.UseMiddleware<TaoAdmin.Common.MultiTenancy.TenantMiddleware>();
 // 操作日志：记录写操作与登录审计（异步落库，不阻塞请求）
@@ -204,7 +207,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ISqlSugarClient>();
     var snowflake = scope.ServiceProvider.GetRequiredService<SnowflakeIdGenerator>();
-    DbInitializer.Initialize(db, snowflake);
+    DbInitializer.Initialize(db, snowflake, typeof(Program).Assembly);
     Log.Logger.Information("IdentityService 就绪（默认账号 admin / Admin@123）");
 }
 

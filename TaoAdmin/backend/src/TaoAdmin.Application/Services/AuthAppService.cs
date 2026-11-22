@@ -179,6 +179,28 @@ public class AuthAppService
         });
     }
 
+    /// <summary>
+    /// 锁屏解锁：对当前已登录用户复核登录密码。
+    /// 不走验证码（用户已在会话内，仅复核本人密码）；失败照常进锁定账本防撞库，
+    /// 账号处于锁定期时与登录链一致一律拒绝。
+    /// </summary>
+    public async Task VerifyPasswordAsync(long userId, string password)
+    {
+        var security = await _security.GetAsync();
+        var user = await _users.FindByIdAsync(userId) ?? throw new DomainException("用户不存在", 401);
+
+        var locked = _lockout.GetRemainingLockMinutes(user.UserName, security.LoginLockMinutes);
+        if (locked.HasValue)
+            throw new DomainException($"连续登录失败已达 {security.LoginMaxFails} 次，账号已锁定，请约 {locked.Value} 分钟后再试", 423);
+
+        if (!BCrypt.Net.BCrypt.Verify(password, user.Password))
+        {
+            _lockout.RecordFailure(user.UserName, security.LoginMaxFails, security.LoginLockMinutes);
+            throw new DomainException("密码不正确，请重试", 400);
+        }
+        _lockout.Clear(user.UserName);
+    }
+
     /// <summary>当前登录用户信息（角色 + 权限码 + 菜单树）</summary>
     public async Task<CurrentUserDto> GetCurrentUserAsync(long userId)
     {
