@@ -37,7 +37,9 @@ Set-Content -Path $sqlFile -Value $sql -Encoding utf8
 $nativeMysql = 'TaoAdmin/deploy/windows/runtime/mysql8/bin/mysql.exe'
 if (Test-Path $nativeMysql) {
     Write-Host "native route: disabling captcha via portable mysql client (stdin)"
-    Get-Content $sqlFile | & $nativeMysql -h127.0.0.1 -uroot -pMicro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
+    # pwsh splits bare '-h127.0.0.1' into '-h127' + '.0.0.1' (mysql then prints usage) —
+    # proven on pwsh 7.4.1; long options pass through intact.
+    Get-Content $sqlFile | & $nativeMysql --host=127.0.0.1 --user=root --password=Micro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) { throw "native mysql exec failed (exit $LASTEXITCODE)" }
 } else {
     Write-Host "container route: disabling captcha via docker exec (stdin)"
@@ -49,7 +51,7 @@ if (Test-Path $nativeMysql) {
         if (-not (Test-Path $dockerCmd)) { throw "docker not found on PATH or at $dockerCmd" }
         Write-Host "docker resolved from install path: $dockerCmd"
     }
-    Get-Content $sqlFile | & $dockerCmd exec -i taoadmin-mysql mysql -uroot -pMicro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
+    Get-Content $sqlFile | & $dockerCmd exec -i taoadmin-mysql mysql --user=root --password=Micro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) { throw "docker exec mysql failed (exit $LASTEXITCODE)" }
 }
 
