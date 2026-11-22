@@ -30,14 +30,26 @@ foreach ($u in "$Gateway/health", "$Files/health", $Frontend) {
 # ---------- 2) 关闭验证码开关（仅测试环境；服务侧配置缓存 60 秒内生效） ----------
 $sql = "UPDATE sys_site_config SET config_value='0' WHERE config_key='loginCaptchaRequired';"
 $sql += "INSERT INTO sys_site_config (id, config_key, config_value) SELECT 5280300000000000999,'loginCaptchaRequired','0' WHERE NOT EXISTS (SELECT 1 FROM sys_site_config WHERE config_key='loginCaptchaRequired');"
+# Pipe SQL via stdin: -e with a long multi-statement string is fragile across
+# shells (pwsh arg splitting made mysql print usage and exit non-zero).
+$sqlFile = Join-Path $env:TEMP 'disable-captcha.sql'
+Set-Content -Path $sqlFile -Value $sql -Encoding utf8
 $nativeMysql = 'TaoAdmin/deploy/windows/runtime/mysql8/bin/mysql.exe'
 if (Test-Path $nativeMysql) {
-    Write-Host "native route: disabling captcha via portable mysql client"
-    & $nativeMysql -h127.0.0.1 -uroot -pMicro@2026 tao_admin -e $sql 2>&1 | ForEach-Object { Write-Host "  $_" }
+    Write-Host "native route: disabling captcha via portable mysql client (stdin)"
+    Get-Content $sqlFile | & $nativeMysql -h127.0.0.1 -uroot -pMicro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) { throw "native mysql exec failed (exit $LASTEXITCODE)" }
 } else {
-    Write-Host "container route: disabling captcha via docker exec"
-    docker exec taoadmin-mysql mysql -uroot -pMicro@2026 tao_admin -e $sql 2>&1 | ForEach-Object { Write-Host "  $_" }
+    Write-Host "container route: disabling captcha via docker exec (stdin)"
+    # Fresh Docker Desktop installs mid-job are not on the runner's fixed PATH for
+    # later steps — fall back to the standard install location.
+    $dockerCmd = 'docker'
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        $dockerCmd = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
+        if (-not (Test-Path $dockerCmd)) { throw "docker not found on PATH or at $dockerCmd" }
+        Write-Host "docker resolved from install path: $dockerCmd"
+    }
+    Get-Content $sqlFile | & $dockerCmd exec -i taoadmin-mysql mysql -uroot -pMicro@2026 tao_admin 2>&1 | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) { throw "docker exec mysql failed (exit $LASTEXITCODE)" }
 }
 
