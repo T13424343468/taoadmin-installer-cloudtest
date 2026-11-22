@@ -359,19 +359,31 @@ public class TenantAppService
         await _db.Updateable(t).ExecuteCommandAsync();
     }
 
-    /// <summary>批量删除租户（逐个软删，返回实际删除数）</summary>
-    public async Task<int> BatchDeleteAsync(List<long> ids)
+    /// <summary>
+    /// 批量删除租户（可容错场景：逐条执行互不影响，单条失败不中断整批，失败明细随返回汇报）。
+    /// 依据老板 2026-11-22 21:07 令：租户软删各条互相独立，无需事务。
+    /// </summary>
+    public async Task<(int Deleted, List<string> Failed)> BatchDeleteAsync(List<long> ids)
     {
         var deleted = 0;
+        var failed = new List<string>();
         foreach (var id in ids.Distinct())
         {
-            var t = await _db.Queryable<SysTenant>().FirstAsync(x => x.Id == id && x.IsDeleted == false);
-            if (t == null) continue;
-            t.IsDeleted = true; t.UpdatedAt = DateTime.Now;
-            await _db.Updateable(t).ExecuteCommandAsync();
-            deleted++;
+            try
+            {
+                var t = await _db.Queryable<SysTenant>().FirstAsync(x => x.Id == id && x.IsDeleted == false);
+                if (t == null) continue;
+                t.IsDeleted = true; t.UpdatedAt = DateTime.Now;
+                await _db.Updateable(t).ExecuteCommandAsync();
+                deleted++;
+            }
+            catch (Exception ex)
+            {
+                // 单条失败照常走完剩余条目，失败原因随响应汇报（可容错口径，非静默吞）
+                failed.Add($"{id}: {ex.Message}");
+            }
         }
-        return deleted;
+        return (deleted, failed);
     }
 }
 

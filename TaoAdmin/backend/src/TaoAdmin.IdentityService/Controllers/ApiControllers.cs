@@ -96,13 +96,13 @@ public class UserController : BaseApiController
         return ApiOk<object>(new { deleted = req.Ids.Distinct().Count() - skipped, skipped }, "批量删除完成");
     }
 
-    /// <summary>批量启用/停用用户（自动跳过当前登录账号，返回 skipped 跳过数）</summary>
+    /// <summary>批量启用/停用用户（自动跳过当前登录账号，返回 skipped 跳过数与失败明细）</summary>
     [HttpPost("batch-status")]
     [Permission("sys:user:edit")]
     public async Task<ApiResult<object>> BatchStatus([FromBody] BatchStatusRequest req)
     {
-        var skipped = await _svc.BatchSetStatusAsync(req.Ids, req.status, User.GetUserId());
-        return ApiOk<object>(new { updated = req.Ids.Distinct().Count() - skipped, skipped }, "批量操作完成");
+        var (skipped, failed) = await _svc.BatchSetStatusAsync(req.Ids, req.status, User.GetUserId());
+        return ApiOk<object>(new { updated = req.Ids.Distinct().Count() - skipped - failed.Count, skipped, failed }, "批量操作完成");
     }
 
     /// <summary>重置密码</summary>
@@ -203,7 +203,7 @@ public class RoleController : BaseApiController
         return ApiOk("删除成功");
     }
 
-    /// <summary>批量删除角色（连带清理授权关系，返回实际删除数）</summary>
+    /// <summary>批量删除角色（强一致：整批一个事务全成全败，任一条失败全部回滚）</summary>
     [HttpPost("batch-delete")]
     [Permission("sys:role:delete")]
     public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
@@ -303,7 +303,7 @@ public class ApiController : BaseApiController
         return ApiOk("删除成功");
     }
 
-    /// <summary>批量删除接口资源（连带清理角色关联，返回实际删除数）</summary>
+    /// <summary>批量删除接口资源（强一致：整批一个事务全成全败，任一条失败全部回滚）</summary>
     [HttpPost("batch-delete")]
     [Permission("sys:api:delete")]
     public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)

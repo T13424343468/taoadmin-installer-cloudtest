@@ -43,13 +43,13 @@ public class TenantController : BaseApiController
         return ApiOk("删除成功");
     }
 
-    /// <summary>批量删除租户（软删，返回实际删除数）</summary>
+    /// <summary>批量删除租户（可容错逐条执行，返回实际删除数与失败明细）</summary>
     [HttpPost("batch-delete")]
     [Permission("sys:tenant:manage")]
     public async Task<ApiResult<object>> BatchDelete([FromBody] BatchIdsRequest req)
     {
-        var deleted = await _svc.BatchDeleteAsync(req.Ids);
-        return ApiOk<object>(new { deleted }, "批量删除完成");
+        var (deleted, failed) = await _svc.BatchDeleteAsync(req.Ids);
+        return ApiOk<object>(new { deleted, failed }, "批量删除完成");
     }
 }
 
