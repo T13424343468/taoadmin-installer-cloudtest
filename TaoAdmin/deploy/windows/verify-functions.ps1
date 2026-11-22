@@ -28,10 +28,10 @@ foreach ($u in "$Gateway/health", "$Files/health", $Frontend) {
 }
 
 # ---------- 2) 关闭验证码开关（仅测试环境；服务侧配置缓存 60 秒内生效） ----------
-$sql = "UPDATE sys_site_config SET config_value='0' WHERE config_key='loginCaptchaRequired';"
-$sql += "INSERT INTO sys_site_config (id, config_key, config_value) SELECT 5280300000000000999,'loginCaptchaRequired','0' WHERE NOT EXISTS (SELECT 1 FROM sys_site_config WHERE config_key='loginCaptchaRequired');"
-# Pipe SQL via stdin: -e with a long multi-statement string is fragile across
-# shells (pwsh arg splitting made mysql print usage and exit non-zero).
+# sys_site_config columns are PascalCase (ConfigKey/ConfigValue) per tao_admin_init.sql.
+$sql = "UPDATE sys_site_config SET ConfigValue='0' WHERE ConfigKey='loginCaptchaRequired';"
+$sql += "INSERT INTO sys_site_config (Id, ConfigKey, ConfigValue, CreatedAt, UpdatedAt, IsDeleted) SELECT 5280300000000000999,'loginCaptchaRequired','0',NOW(),NOW(),0 WHERE NOT EXISTS (SELECT 1 FROM sys_site_config WHERE ConfigKey='loginCaptchaRequired');"
+# Pipe SQL via stdin (mysql reads the script from standard input).
 $sqlFile = Join-Path $env:TEMP 'disable-captcha.sql'
 Set-Content -Path $sqlFile -Value $sql -Encoding utf8
 $nativeMysql = 'TaoAdmin/deploy/windows/runtime/mysql8/bin/mysql.exe'
