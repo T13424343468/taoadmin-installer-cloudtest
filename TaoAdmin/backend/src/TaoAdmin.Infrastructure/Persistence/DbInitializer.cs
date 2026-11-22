@@ -291,8 +291,10 @@ public static class DbInitializer
         var sysDir = db.Queryable<SysMenu>().First(m => m.MenuName == "系统管理" && m.ParentId == 0);
         if (sysDir == null) return;
 
+        // 局部变量中转：SqlSugar 表达式解析不了私有静态字段（Field can't be private）
+        var demoComponents = DemoMenuComponents;
         var moved = db.Queryable<SysMenu>()
-            .Where(m => m.ParentId == sysDir.Id && DemoMenuComponents.Contains(m.Component))
+            .Where(m => m.ParentId == sysDir.Id && demoComponents.Contains(m.Component))
             .ToList();
         foreach (var menu in moved.Where(m => m.ParentId != demoDir.Id))
         {
