@@ -51,6 +51,80 @@ jobs:
           name: deployer-exe
           path: TaoAdmin/deploy/windows/TaoAdminDeployer.exe
 
+  deployer-e2e-container:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Baseline docker works
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $ok = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            docker info 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "docker engine not ready, retry $i"; Start-Sleep -Seconds 15
+            # mid-wait restart: runner docker daemon sometimes wedges after VM boot
+            if ($i -eq 12) { Stop-Process -Name 'Docker Desktop' -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 10; Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -ErrorAction SilentlyContinue }
+          }
+          if (-not $ok) { throw 'docker engine never became ready' }
+          docker ps
+      - name: Publish deployer exe
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP/deployer-out"
+          dotnet publish TaoAdmin/deploy/windows/TaoAdminDeployer/src/Deployer.App/Deployer.App.csproj -c Release -o $out --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'publish failed' }
+          Copy-Item "$out/TaoAdminDeployer.exe" TaoAdmin/deploy/windows/ -Force
+          Copy-Item "$out/TaoAdminDeployer.pdb" TaoAdmin/deploy/windows/ -Force -ErrorAction SilentlyContinue
+      - name: E2E deploy (container route, real run via headless mode)
+        timeout-minutes: 60
+        shell: pwsh
+        run: |
+          $exe = 'TaoAdmin/deploy/windows/TaoAdminDeployer.exe'
+          $hlog = 'TaoAdmin/deploy/windows/deployer-headless.log'
+          $p = Start-Process -FilePath $exe `
+            -ArgumentList '--deploy','--route','docker','--yes' `
+            -RedirectStandardOutput 'deployer-out.log' -RedirectStandardError 'deployer-err.log' `
+            -PassThru
+          $shown = 0
+          while (-not $p.HasExited) {
+            Start-Sleep -Seconds 20
+            if (Test-Path $hlog) {
+              $lines = @(Get-Content $hlog)
+              if ($lines.Count -gt $shown) {
+                $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
+                $shown = $lines.Count
+              }
+            }
+          }
+          if (Test-Path $hlog) { @(Get-Content $hlog) | ForEach-Object { Write-Host "  | $_" } }
+          Get-Content 'deployer-out.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "OUT: $_" }
+          Get-Content 'deployer-err.log' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ERR: $_" }
+          if ($p.ExitCode -ne 0) { throw "deployer exit code $($p.ExitCode)" }
+      - name: Verify functions (real login + business APIs + frontend)
+        shell: pwsh
+        run: |
+          TaoAdmin/deploy/windows/verify-functions.ps1
+      - name: Compose state after deploy
+        if: always()
+        shell: pwsh
+        run: |
+          docker ps -a --format '{{.Names}} {{.Status}}' 2>$null | ForEach-Object { Write-Host "  container: $_" }
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployer-e2e-container-logs
+          path: |
+            deployer-out.log
+            deployer-err.log
+            TaoAdmin/deploy/windows/deployer-headless.log
+
   deployer-e2e-native:
     runs-on: windows-latest
     timeout-minutes: 90
@@ -161,6 +235,10 @@ jobs:
             if (-not $ok) { throw "endpoint not ready: $u" }
             Write-Host "OK $u"
           }
+      - name: Verify functions (real login + business APIs + frontend)
+        shell: pwsh
+        run: |
+          TaoAdmin/deploy/windows/verify-functions.ps1
       - name: E2E uninstall (must be clean)
         timeout-minutes: 20
         shell: pwsh

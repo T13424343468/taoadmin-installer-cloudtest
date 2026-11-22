@@ -47,7 +47,7 @@ if (builder.Configuration.GetValue<bool>("Nacos:Enabled"))
 // ==================== SqlSugar + Redis + 雪花ID ====================
 builder.Services.AddSqlSugar(builder.Configuration);
 var redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-builder.Services.AddSingleton(StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnection));
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ => StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnection));
 builder.Services.AddSingleton<RedisHelper>();
 builder.Services.AddSingleton(_ => new SnowflakeIdGenerator(
     builder.Configuration.GetValue<long>("Snowflake:DatacenterId", 1),

@@ -880,10 +880,12 @@ public sealed class DeployEngine
 
     private async Task StepDockerHealth(CancellationToken ct)
     {
-        L("等待健康检查（网关/文件中心/前端，每项最多等 5 分钟）……");
+        L("等待健康检查（网关/认证/任务/文件中心/前端，每项最多等 5 分钟）……");
         var targets = new List<(string Name, string Url)>
         {
             ("网关", "http://127.0.0.1:5000/health"),
+            ("认证服务", "http://127.0.0.1:5001/health"),
+            ("任务服务", "http://127.0.0.1:5002/health"),
             ("文件中心", "http://127.0.0.1:5003/health"),
             ("前端", "http://127.0.0.1:8080/"),
         };
@@ -1054,7 +1056,10 @@ public sealed class DeployEngine
         if (Net.Ports.DockerEngineRunning())
         {
             // Task.Run: never block-and-resume on a captured UI context (dispatcher deadlock).
-            var r = Task.Run(() => ProcessRunner.RunAsync("docker", "ps --format '{{.Names}} {{.Status}}'")).GetAwaiter().GetResult();
+            // Double quotes: Windows child-process parsing treats single quotes as literal
+            // characters, so '{{.Names}} {{.Status}}' split into two args and docker ps
+            // rejected the stray positional argument ('docker ps' accepts no arguments).
+            var r = Task.Run(() => ProcessRunner.RunAsync("docker", "ps --format \"{{.Names}} {{.Status}}\"")).GetAwaiter().GetResult();
             containers.AddRange(r.Output.Where(l => !string.IsNullOrWhiteSpace(l)));
         }
         return new StatusReport(items, containers);
