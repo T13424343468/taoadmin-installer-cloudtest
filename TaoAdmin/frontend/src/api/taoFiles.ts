@@ -53,6 +53,8 @@ export interface FileItem {
   uploadBy: string | null;
   source: string | null;
   createdAt: string;
+  /** 移入回收站时间（仅回收站列表有值） */
+  deletedAt?: string | null;
 }
 
 export interface FilePage {
@@ -84,8 +86,28 @@ export async function uploadFile(file: File): Promise<UploadResult> {
   return { ...data, fileName: data.fileName || file.name };
 }
 
-export async function deleteFile(id: string, physicalDelete = false): Promise<void> {
-  await fcRequest({ method: 'DELETE', url: `/api/files/${id}`, params: physicalDelete ? { physicalDelete: true } : undefined });
+/** 删除文件（移入回收站，磁盘文件保留；恢复/彻底删除走回收站接口） */
+export async function deleteFile(id: string): Promise<void> {
+  await fcRequest({ method: 'DELETE', url: `/api/files/${id}` });
+}
+
+/** 回收站分页（仅已删记录，按删除时间倒序） */
+export async function listRecycleBin(params: {
+  pageIndex: number;
+  pageSize: number;
+  keyword?: string;
+}): Promise<FilePage> {
+  return fcRequest<FilePage>({ method: 'GET', url: '/api/files/recycle-bin', params });
+}
+
+/** 从回收站恢复文件 */
+export async function restoreFile(id: string): Promise<void> {
+  await fcRequest({ method: 'POST', url: `/api/files/${id}/restore` });
+}
+
+/** 彻底删除（物理删记录并清理磁盘文件，不可恢复；调用方须已做二次确认） */
+export async function purgeFile(id: string): Promise<void> {
+  await fcRequest({ method: 'DELETE', url: `/api/files/${id}/purge` });
 }
 
 export async function pingTaoFiles(): Promise<string> {

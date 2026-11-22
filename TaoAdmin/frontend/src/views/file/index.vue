@@ -20,6 +20,11 @@
         @search="onSearch"
       />
 
+      <a-radio-group v-model:value="viewMode" button-style="solid" @change="onViewChange">
+        <a-radio-button value="list">文件列表</a-radio-button>
+        <a-radio-button value="recycle">回收站</a-radio-button>
+      </a-radio-group>
+
       <div class="spacer" />
 
       <template v-if="selectedCount > 0">
@@ -36,6 +41,7 @@
 
     <!-- 文件表格 -->
     <a-table
+      v-show="viewMode === 'list'"
       :data-source="files"
       :columns="columns"
       :loading="loading"
@@ -78,6 +84,35 @@
       </template>
     </a-table>
 
+    <!-- 回收站表格：恢复 / 彻底删除（二次确认） -->
+    <a-table
+      v-show="viewMode === 'recycle'"
+      :data-source="recycleFiles"
+      :columns="recycleColumns"
+      :loading="recycleLoading"
+      :pagination="recyclePagination"
+      row-key="id"
+      size="small"
+      @change="onRecycleTableChange"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'fileName'">
+          <div>{{ record.fileName }}</div>
+          <div class="sub">{{ formatSize(record.size) }} · 原上传于 {{ (record.createdAt || '').replace('T', ' ') }}</div>
+        </template>
+        <template v-else-if="column.key === 'deletedAt'">
+          {{ (record.deletedAt || '').replace('T', ' ') }}
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <a @click="onRestore(record)">恢复</a>
+          <a class="danger" @click="onPurgeConfirm(record)">彻底删除</a>
+        </template>
+      </template>
+      <template #empty>
+        <a-empty description="回收站是空的" />
+      </template>
+    </a-table>
+
     <!-- 图片预览 -->
     <a-image
       v-if="previewRecord"
@@ -111,6 +146,9 @@ import {
   listFiles,
   uploadFile,
   deleteFile,
+  listRecycleBin,
+  restoreFile,
+  purgeFile,
   buildFileUrl,
   getTaoFilesBase,
   setTaoFilesBase,
@@ -153,6 +191,24 @@ async function onSelectAll() {
   await selectAll();
   message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 个`);
 }
+
+// 视图切换：文件列表 / 回收站（删除的文件先进回收站，可恢复或彻底删除）
+const viewMode = ref<'list' | 'recycle'>('list');
+const recycleFiles = ref<FileItem[]>([]);
+const recycleLoading = ref(false);
+const recycleQuery = reactive({ pageIndex: 1, pageSize: 10 });
+const recyclePagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => `共 ${t} 个文件`,
+});
+const recycleColumns = [
+  { title: '文件名', key: 'fileName', ellipsis: true },
+  { title: '删除时间', key: 'deletedAt', width: 160 },
+  { title: '操作', key: 'action', width: 160 },
+];
 
 const query = reactive({ pageIndex: 1, pageSize: 10 });
 const total = ref(0);
@@ -227,11 +283,12 @@ async function loadData(page = query.pageIndex): Promise<void> {
   }
 }
 
-/** 搜索条件变化：清空游标缓存与勾选后回到第一页 */
+/** 搜索条件变化：清空游标缓存与勾选后回到第一页（按当前视图刷新对应列表） */
 function onSearch(): void {
   cursorMap.clear();
   clearSelection();
-  void loadData(1);
+  if (viewMode.value === 'recycle') void loadRecycle(1);
+  else void loadData(1);
 }
 
 /** 拦截默认上传，改走文件中心接口 */
@@ -258,7 +315,7 @@ async function onCopy(record: FileItem): Promise<void> {
 async function onDelete(record: FileItem): Promise<void> {
   try {
     await deleteFile(record.id);
-    message.success('已删除');
+    message.success('已移入回收站，可在回收站恢复或彻底删除');
     cursorMap.clear();
     await loadData(pageAfterDelete(total.value, 1, query.pageIndex, pagination.pageSize));
   } catch (e: any) {
@@ -273,7 +330,7 @@ function onBatchDelete(): void {
   if (!ids.length) return;
   Modal.confirm({
     title: '批量删除文件',
-    content: `确定删除选中的 ${ids.length} 个文件吗？逐条执行，失败项会在完成后汇报。`,
+    content: `确定删除选中的 ${ids.length} 个文件吗？删除后进入回收站，可恢复或彻底删除。逐条执行，失败项会在完成后汇报。`,
     okText: '删除',
     okType: 'danger',
     async onOk() {
@@ -290,6 +347,67 @@ function onBatchDelete(): void {
     },
   });
 }
+
+/** 回收站分页加载 */
+async function loadRecycle(page = recycleQuery.pageIndex): Promise<void> {
+  recycleLoading.value = true;
+  try {
+    recycleQuery.pageIndex = page;
+    const data = await listRecycleBin({
+      pageIndex: page,
+      pageSize: recyclePagination.pageSize,
+      keyword: keyword.value || undefined,
+    });
+    recycleFiles.value = data.list || [];
+    recyclePagination.current = page;
+    recyclePagination.total = data.total;
+  } catch (e: any) {
+    message.error(e.message || '加载失败');
+  } finally {
+    recycleLoading.value = false;
+  }
+}
+
+/** 视图切换：进入回收站时现拉最新数据 */
+function onViewChange(): void {
+  if (viewMode.value === 'recycle') void loadRecycle(1);
+  else void loadData(1);
+}
+
+/** 恢复：还原记录，磁盘文件从未删除，恢复即重新可用 */
+async function onRestore(record: FileItem): Promise<void> {
+  try {
+    await restoreFile(record.id);
+    message.success(`「${record.fileName}」已恢复`);
+    await loadRecycle();
+  } catch (e: any) {
+    message.error(e.message || '恢复失败');
+  }
+}
+
+/** 彻底删除：物理删记录并清理磁盘文件，不可恢复，二次确认 */
+function onPurgeConfirm(record: FileItem): void {
+  Modal.confirm({
+    title: '彻底删除（不可恢复）',
+    content: `「${record.fileName}」的记录与磁盘文件将被永久删除，无法恢复。确定继续吗？`,
+    okText: '彻底删除',
+    okType: 'danger',
+    onOk: async () => {
+      try {
+        await purgeFile(record.id);
+        message.success(`「${record.fileName}」已彻底删除`);
+        await loadRecycle();
+      } catch (e: any) {
+        message.error(e.message || '删除失败');
+      }
+    },
+  });
+}
+
+const onRecycleTableChange: TableProps['onChange'] = (pag) => {
+  recyclePagination.pageSize = pag.pageSize ?? 10;
+  loadRecycle(pag.current ?? 1);
+};
 
 function onPreviewClose(v: boolean): void {
   previewVisible.value = v;
