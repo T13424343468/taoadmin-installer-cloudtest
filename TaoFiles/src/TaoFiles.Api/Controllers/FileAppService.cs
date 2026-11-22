@@ -34,6 +34,8 @@ public class FileDto
     public string? uploadBy { get; set; }
     public string? source { get; set; }
     public DateTime createdAt { get; set; }
+    /// <summary>移入回收站时间（仅回收站列表有值）</summary>
+    public DateTime? deletedAt { get; set; }
 }
 
 public class PageOf<T>
@@ -143,12 +145,7 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IC
         {
             total = total,
             nextCursor = nextCursor,
-            list = list.Select(f => new FileDto
-            {
-                id = f.Id.ToString(), fileName = f.FileName, fileUrl = f.FileUrl, size = f.Size,
-                contentType = f.ContentType, md5 = f.Md5, uploadBy = f.UploadBy,
-                source = f.Source, createdAt = f.CreatedAt
-            }).ToList()
+            list = list.Select(ToDto).ToList()
         };
     }
 
@@ -173,16 +170,76 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IC
         }
     }
 
-    /// <summary>删除（软删；physicalDelete=true 时同时清理磁盘文件）</summary>
-    public async Task DeleteAsync(string id, bool physicalDelete)
+    /// <summary>
+    /// 删除（移入回收站）：记录保留（IsDeleted + DeletedAt），磁盘文件不动。
+    /// 依据老板 2026-11-18 拍板阶段二安全闸：删除可还原必留退路——彻底删除须经回收站二次确认后发起。
+    /// </summary>
+    public async Task DeleteAsync(string id)
+    {
+        var entity = await FindAliveAsync(id);
+        entity.IsDeleted = true;
+        entity.DeletedAt = DateTime.Now;
+        await db.Updateable(entity).ExecuteCommandAsync();
+    }
+
+    /// <summary>回收站分页（仅已删记录，按删除时间倒序；回收站量小，总数直接计数不缓存）</summary>
+    public async Task<PageOf<FileDto>> RecycleBinPageAsync(int pageIndex, int pageSize, string? keyword = null)
+    {
+        var query = db.Queryable<SysFile>()
+            .Where(f => f.IsDeleted == true)
+            .WhereIF(!string.IsNullOrWhiteSpace(keyword), f => f.FileName.Contains(keyword!));
+
+        var total = await query.CountAsync();
+        var list = await query
+            .OrderBy(f => f.DeletedAt, OrderByType.Desc)
+            .OrderBy(f => f.Id, OrderByType.Desc)
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+        return new PageOf<FileDto>
+        {
+            total = total,
+            list = list.Select(ToDto).ToList()
+        };
+    }
+
+    /// <summary>从回收站恢复（还原记录，磁盘文件从未删除，恢复即重新可用）</summary>
+    public async Task RestoreAsync(string id)
+    {
+        var entity = await FindRecycledAsync(id);
+        entity.IsDeleted = false;
+        entity.DeletedAt = null;
+        await db.Updateable(entity).ExecuteCommandAsync();
+    }
+
+    /// <summary>彻底删除（物理删记录 + 清理磁盘文件，不可恢复；调用方须已做二次确认）</summary>
+    public async Task PurgeAsync(string id)
+    {
+        var entity = await FindRecycledAsync(id);
+        await db.Deleteable(entity).ExecuteCommandAsync();
+        await storage.DeleteAsync(entity.FileUrl);
+    }
+
+    private async Task<SysFile> FindAliveAsync(string id)
     {
         var fid = long.Parse(id);
-        var entity = await db.Queryable<SysFile>().FirstAsync(f => f.Id == fid && f.IsDeleted == false)
+        return await db.Queryable<SysFile>().FirstAsync(f => f.Id == fid && f.IsDeleted == false)
             ?? throw new DomainException("文件不存在", 404);
-        entity.IsDeleted = true;
-        await db.Updateable(entity).ExecuteCommandAsync();
-        if (physicalDelete) await storage.DeleteAsync(entity.FileUrl);
     }
+
+    private async Task<SysFile> FindRecycledAsync(string id)
+    {
+        var fid = long.Parse(id);
+        return await db.Queryable<SysFile>().FirstAsync(f => f.Id == fid && f.IsDeleted == true)
+            ?? throw new DomainException("文件不在回收站中", 404);
+    }
+
+    private FileDto ToDto(SysFile f) => new()
+    {
+        id = f.Id.ToString(), fileName = f.FileName, fileUrl = f.FileUrl, size = f.Size,
+        contentType = f.ContentType, md5 = f.Md5, uploadBy = f.UploadBy,
+        source = f.Source, createdAt = f.CreatedAt, deletedAt = f.DeletedAt
+    };
 }
 
 /// <summary>业务异常（统一返回给调用方）</summary>

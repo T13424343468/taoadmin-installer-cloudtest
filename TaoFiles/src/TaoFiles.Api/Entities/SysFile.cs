@@ -47,7 +47,11 @@ public class SysFile
     [SugarColumn(ColumnDescription = "创建时间")]
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
-    /// <summary>软删除标记</summary>
+    /// <summary>软删除标记（true = 在回收站中）</summary>
     [SugarColumn(ColumnDescription = "软删除标记")]
     public bool IsDeleted { get; set; }
+
+    /// <summary>移入回收站时间（未删除为 null；回收站排序与展示依据）</summary>
+    [SugarColumn(IsNullable = true, ColumnDescription = "移入回收站时间")]
+    public DateTime? DeletedAt { get; set; }
 }
