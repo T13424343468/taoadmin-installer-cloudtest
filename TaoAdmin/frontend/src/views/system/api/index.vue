@@ -108,6 +108,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import { useBatchSelection } from '@/composables/useBatchSelection';
+import { pageAfterDelete } from '@/utils/listPage';
 import {
   getApiPage,
   saveApi,
@@ -232,7 +233,7 @@ async function onSubmit() {
 async function onDelete(record: ApiResourceItem) {
   await deleteApi(record.id);
   message.success('删除成功');
-  loadData();
+  loadData(pageAfterDelete(pagination.total, 1, pagination.current, pagination.pageSize));
 }
 
 // ============ 批量删除 ============
@@ -251,7 +252,7 @@ function onBatchDelete() {
         const res = await batchDeleteApis(ids);
         message.success(`删除完成：成功 ${res.deleted} 条`);
         clearSelection();
-        loadData();
+        loadData(pageAfterDelete(pagination.total, res.deleted, pagination.current, pagination.pageSize));
       } finally {
         batchLoading.value = false;
       }

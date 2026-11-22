@@ -101,6 +101,7 @@ import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import FilterBar, { type FilterField } from '@/components/FilterBar/index.vue';
 import { useBatchSelection } from '@/composables/useBatchSelection';
+import { pageAfterDelete } from '@/utils/listPage';
 import {
   getAnnouncementPage,
   publishAnnouncement,
@@ -207,7 +208,7 @@ function onBatchDelete() {
         const res = await batchDeleteAnnouncements(ids);
         message.success(`删除完成：成功 ${res.deleted} 条`);
         clearSelection();
-        loadData();
+        loadData(pageAfterDelete(pagination.total, res.deleted, pagination.current, pagination.pageSize));
       } finally {
         batchLoading.value = false;
       }
@@ -278,7 +279,7 @@ async function onToggleStatus(record: AnnouncementItem) {
 async function onDelete(record: AnnouncementItem) {
   await deleteAnnouncement(record.id);
   message.success('删除成功');
-  loadData();
+  loadData(pageAfterDelete(pagination.total, 1, pagination.current, pagination.pageSize));
 }
 
 const detailVisible = ref(false);

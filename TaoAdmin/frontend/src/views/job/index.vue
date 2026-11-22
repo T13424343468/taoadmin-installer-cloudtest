@@ -7,6 +7,18 @@
         新增任务
       </a-button>
       <a-button style="margin-left: 8px" @click="loadData(1)">刷新</a-button>
+      <a-space v-if="selectedCount > 0" style="margin-left: 12px">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button v-permission="'job:pause'" :loading="batchLoading" @click="onBatchToggle('pause')">批量暂停</a-button>
+        <a-button v-permission="'job:resume'" :loading="batchLoading" @click="onBatchToggle('resume')">批量恢复</a-button>
+        <a-button v-permission="'job:delete'" danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="onClearSelection">清空勾选</a>
+      </a-space>
+      <a-button
+        v-else-if="pagination.total > 0"
+        style="margin-left: 12px"
+        @click="onSelectAll"
+      >选中全部 {{ pagination.total }} 条</a-button>
     </div>
 
     <a-table
@@ -16,6 +28,7 @@
       :pagination="pagination"
       row-key="id"
       size="middle"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -101,6 +114,9 @@
 import { ref, reactive, onMounted } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
+import { pageAfterDelete } from '@/utils/listPage';
+import { runBatchOneByOne } from '@/utils/batchRun';
 import {
   getJobPage,
   saveJob,
@@ -113,6 +129,31 @@ import {
 
 const loading = ref(false);
 const data = ref<JobItem[]>([]);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  const res = await getJobPage({ pageIndex: 1, pageSize: 10000 });
+  return (res.items || []).map((j) => j.id);
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 条`);
+}
+
+function onClearSelection() {
+  clearSelection();
+}
 
 const pagination = reactive({
   current: 1,
@@ -142,6 +183,7 @@ async function loadData(pageIndex?: number) {
     const res = await getJobPage({ pageIndex: pagination.current, pageSize: pagination.pageSize });
     data.value = res.items || [];
     pagination.total = res.total || 0;
+    setTotal(res.total || 0);
   } finally {
     loading.value = false;
   }
@@ -197,7 +239,52 @@ async function onSubmit() {
 async function onDelete(record: JobItem) {
   await deleteJob(record.id);
   message.success('删除成功');
-  loadData();
+  loadData(pageAfterDelete(pagination.total, 1, pagination.current, pagination.pageSize));
+}
+
+// ============ 批量操作 ============
+
+function onBatchDelete() {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除任务',
+    content: `确定删除选中的 ${ids.length} 个任务吗？删除后不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const r = await runBatchOneByOne(ids, (id) => deleteJob(id));
+        message.success(`删除完成：成功 ${r.okCount} 条${r.failedCount ? `，失败 ${r.failedCount} 条` : ''}`);
+        clearSelection();
+        loadData(pageAfterDelete(pagination.total, r.okCount, pagination.current, pagination.pageSize));
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
+}
+
+function onBatchToggle(action: 'pause' | 'resume') {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  const label = action === 'pause' ? '暂停' : '恢复';
+  Modal.confirm({
+    title: `批量${label}`,
+    content: `确定${label}选中的 ${ids.length} 个任务吗？`,
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const r = await runBatchOneByOne(ids, (id) => (action === 'pause' ? pauseJob(id) : resumeJob(id)));
+        message.success(`批量${label}完成：成功 ${r.okCount} 条${r.failedCount ? `，失败 ${r.failedCount} 条` : ''}`);
+        clearSelection();
+        loadData();
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 // ============ 暂停 / 恢复 / 执行一次 ============
@@ -231,5 +318,9 @@ onMounted(() => loadData());
 <style scoped>
 .danger-link {
   color: #ff4d4f;
+}
+
+.batch-count {
+  color: #1677ff;
 }
 </style>

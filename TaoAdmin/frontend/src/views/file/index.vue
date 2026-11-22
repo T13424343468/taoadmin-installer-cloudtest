@@ -22,6 +22,13 @@
 
       <div class="spacer" />
 
+      <template v-if="selectedCount > 0">
+        <span class="batch-count">已选 {{ selectedCount }} 项</span>
+        <a-button danger :loading="batchLoading" @click="onBatchDelete">批量删除</a-button>
+        <a @click="clearSelection">清空勾选</a>
+      </template>
+      <a-button v-else-if="pagination.total > 0" @click="onSelectAll">选中全部 {{ pagination.total }} 个</a-button>
+
       <a-button @click="addrOpen = true">
         <SettingOutlined /> 文件中心地址
       </a-button>
@@ -35,6 +42,7 @@
       :pagination="pagination"
       row-key="id"
       size="small"
+      :row-selection="{ selectedRowKeys, onChange: onTableSelectChange }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -94,8 +102,11 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
 import { PlusOutlined, SettingOutlined } from '@ant-design/icons-vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import type { TableProps } from 'ant-design-vue';
+import { useBatchSelection } from '@/composables/useBatchSelection';
+import { pageAfterDelete } from '@/utils/listPage';
+import { runBatchOneByOne } from '@/utils/batchRun';
 import {
   listFiles,
   uploadFile,
@@ -113,6 +124,35 @@ const loading = ref(false);
 const keyword = ref('');
 const previewRecord = ref<FileItem | null>(null);
 const previewVisible = ref(true);
+
+// ============ 批量选择（跨页保留） ============
+
+const batchLoading = ref(false);
+const {
+  selectedRowKeys,
+  selectedCount,
+  onTableSelectChange,
+  setTotal,
+  selectAll,
+  clearSelection,
+  getSelectedIds,
+} = useBatchSelection(async () => {
+  // 文件中心单页上限 100 条，按总数循环取齐全部 ID
+  const ids: string[] = [];
+  const first = await listFiles({ pageIndex: 1, pageSize: 100, keyword: keyword.value || undefined });
+  ids.push(...first.list.map((f) => f.id));
+  const pages = Math.ceil(first.total / 100);
+  for (let p = 2; p <= pages; p++) {
+    const next = await listFiles({ pageIndex: p, pageSize: 100, keyword: keyword.value || undefined });
+    ids.push(...next.list.map((f) => f.id));
+  }
+  return ids;
+});
+
+async function onSelectAll() {
+  await selectAll();
+  message.info(`已按当前筛选条件选中全部 ${selectedCount.value} 个`);
+}
 
 const query = reactive({ pageIndex: 1, pageSize: 10 });
 const total = ref(0);
@@ -177,6 +217,7 @@ async function loadData(page = query.pageIndex): Promise<void> {
     total.value = data.total;
     pagination.current = page;
     pagination.total = data.total;
+    setTotal(data.total);
     if (data.nextCursor) cursorMap.set(page, data.nextCursor);
     else cursorMap.delete(page);
   } catch (e: any) {
@@ -186,9 +227,10 @@ async function loadData(page = query.pageIndex): Promise<void> {
   }
 }
 
-/** 搜索条件变化：清空游标缓存后回到第一页 */
+/** 搜索条件变化：清空游标缓存与勾选后回到第一页 */
 function onSearch(): void {
   cursorMap.clear();
+  clearSelection();
   void loadData(1);
 }
 
@@ -217,11 +259,36 @@ async function onDelete(record: FileItem): Promise<void> {
   try {
     await deleteFile(record.id);
     message.success('已删除');
-    if (files.value.length === 1 && query.pageIndex > 1) await loadData(query.pageIndex - 1);
-    else await loadData();
+    cursorMap.clear();
+    await loadData(pageAfterDelete(total.value, 1, query.pageIndex, pagination.pageSize));
   } catch (e: any) {
     message.error(e.message || '删除失败');
   }
+}
+
+// ============ 批量删除 ============
+
+function onBatchDelete(): void {
+  const ids = getSelectedIds();
+  if (!ids.length) return;
+  Modal.confirm({
+    title: '批量删除文件',
+    content: `确定删除选中的 ${ids.length} 个文件吗？逐条执行，失败项会在完成后汇报。`,
+    okText: '删除',
+    okType: 'danger',
+    async onOk() {
+      batchLoading.value = true;
+      try {
+        const r = await runBatchOneByOne(ids, (id) => deleteFile(id));
+        message.success(`删除完成：成功 ${r.okCount} 个${r.failedCount ? `，失败 ${r.failedCount} 个` : ''}`);
+        clearSelection();
+        cursorMap.clear();
+        await loadData(pageAfterDelete(total.value, r.okCount, query.pageIndex, pagination.pageSize));
+      } finally {
+        batchLoading.value = false;
+      }
+    },
+  });
 }
 
 function onPreviewClose(v: boolean): void {
@@ -271,6 +338,10 @@ onMounted(() => loadData(1));
   .spacer {
     flex: 1;
   }
+}
+
+.batch-count {
+  color: #1677ff;
 }
 
 .thumb {
