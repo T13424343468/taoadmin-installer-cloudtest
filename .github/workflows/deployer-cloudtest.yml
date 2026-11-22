@@ -4,6 +4,7 @@ on:
     branches: [ main ]
     paths:
       - 'TaoAdmin/deploy/windows/TaoAdminDeployer/**'
+      - 'TaoAdmin/deploy/windows/verify-functions.ps1'
       - '.github/workflows/deployer-cloudtest.yml'
   workflow_dispatch: {}
 
