@@ -28,3 +28,8 @@
 - dotnet SDK：export DOTNET_ROOT=/root/workspace/.local/dotnet10 && export PATH=$DOTNET_ROOT:$PATH（global.json 要求 10.0.404）
 - 测试：cd TaoAdmin/deploy/windows/TaoAdminDeployer && dotnet test tests/Deployer.Core.Tests/...
 - 工作区：/root/workspace/installer-fix/wt-round3-dist（分支 round3-dist）
+
+## 2026-11-23 12:48 调度记录
+- round3_enhance2 / round3_codegen2 两分身被中断（平台深度限制，无法再派子分身），工作区无遗留提交。
+- 降级：主班（本班）接手，按增量提交顺序亲自落码：先功能四项（⑮⑰⑱→⑯），再生成器单表链路。
+- 后续分身额度恢复（12 月）或平台限制解除后，剩余里程碑（生成器主从/增强、分布式续班）再并行补派。
