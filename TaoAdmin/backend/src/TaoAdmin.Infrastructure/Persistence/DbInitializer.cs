@@ -21,7 +21,8 @@ public static class DbInitializer
             typeof(SysTenant), typeof(SysMessage), typeof(SysWorkflow), typeof(SysWorkflowInstance), typeof(SysWorkflowTask),
             typeof(SysDictType), typeof(SysDictData), typeof(SysOperationLog), typeof(SysSiteConfig), typeof(SysAnnouncement),
             typeof(TaoAdmin.Domain.Entities.SysFile), typeof(TaoAdmin.Domain.Entities.SysRegion),
-            typeof(TaoAdmin.Domain.Entities.SysRegionMeta));
+            typeof(TaoAdmin.Domain.Entities.SysRegionMeta),
+            typeof(TaoAdmin.Domain.Entities.SysAlertRule), typeof(TaoAdmin.Domain.Entities.SysNotifyLog));
 
         if (db.Queryable<SysUser>().Count() == 0)
             SeedBase(db, snowflake);

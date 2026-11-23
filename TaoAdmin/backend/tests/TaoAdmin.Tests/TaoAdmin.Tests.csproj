@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
     <PackageReference Include="xunit" Version="2.7.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +27,7 @@
     <ProjectReference Include="..\..\src\TaoAdmin.Application\TaoAdmin.Application.csproj" />
     <ProjectReference Include="..\..\src\TaoAdmin.GatewayService\TaoAdmin.GatewayService.csproj" />
     <ProjectReference Include="..\..\src\TaoAdmin.IdentityService\TaoAdmin.IdentityService.csproj" />
+    <ProjectReference Include="..\..\src\TaoAdmin.TaskService\TaoAdmin.TaskService.csproj" />
   </ItemGroup>
 
 </Project>

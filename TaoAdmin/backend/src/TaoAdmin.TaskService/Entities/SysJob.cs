@@ -46,4 +46,8 @@ public class SysJob : BaseEntity
     /// <summary>上次执行结果</summary>
     [SugarColumn(Length = 500, IsNullable = true, ColumnDescription = "上次执行结果")]
     public string? LastResult { get; set; }
+
+    /// <summary>失败自动重试次数（任务级配置，0 表示不重试）</summary>
+    [SugarColumn(ColumnDescription = "失败自动重试次数", IsNullable = true)]
+    public int RetryCount { get; set; }
 }

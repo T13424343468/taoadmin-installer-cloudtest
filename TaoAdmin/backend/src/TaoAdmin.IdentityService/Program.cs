@@ -121,6 +121,18 @@ builder.Services.AddSingleton<TaoAdmin.Common.Auth.LoginLockoutStore>();
 builder.Services.AddSingleton<TaoAdmin.Application.Services.AuditCleanupService>();
 builder.Services.AddSingleton<TaoAdmin.Application.Services.AuditTrail>();
 builder.Services.AddScoped<NotifyChannelAppService>();
+// 告警通知接线：SMTP 真实发送 + 钉钉 Webhook 真实发送 + 规则化告警（配置运行时从库读取）
+builder.Services.AddSingleton<DingTalkSender>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<AlertNotifier>();
+builder.Services.AddScoped<AlertRuleAppService>();
+builder.Services.AddSingleton<ServiceDownAlertEvaluator>(sp =>
+{
+    var notifier = sp.GetRequiredService<AlertNotifier>();
+    return new ServiceDownAlertEvaluator((eventType, title, content, count) =>
+        notifier.NotifyAsync(eventType, title, content, count));
+});
+builder.Services.AddHostedService<TaoAdmin.IdentityService.Monitoring.ServiceHealthMonitorService>();
 // 文件中心：本地盘存储默认；经 FileStorage:Provider=minio 切 MinIO 对象存储（数据不出内网）
 builder.Services.AddScoped<FileAppService>();
 builder.Services.AddScoped<TaoAdmin.Common.Storage.IFileStorageProvider>(sp =>

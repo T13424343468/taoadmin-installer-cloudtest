@@ -50,6 +50,7 @@
         <template v-else-if="column.key === 'action'">
           <a-space>
             <a v-permission="'job:run'" @click="onRunOnce(record)">执行一次</a>
+            <a v-permission="'job:list'" @click="openHistory(record)">历史</a>
             <a v-if="record.status === 'RUNNING'" v-permission="'job:pause'" @click="onToggle(record, 'pause')">
               暂停
             </a>
@@ -102,11 +103,48 @@
         <a-form-item label="任务参数">
           <a-textarea v-model:value="form.params" :rows="2" placeholder='JSON 格式参数，如 {"days": 30}' />
         </a-form-item>
+        <a-form-item label="失败自动重试次数" help="执行失败后自动重试的次数，0 表示不重试">
+          <a-input-number v-model:value="form.retryCount" :min="0" :max="10" style="width: 160px" />
+        </a-form-item>
         <a-form-item label="描述">
           <a-textarea v-model:value="form.description" :rows="2" placeholder="任务说明" />
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 执行历史抽屉 -->
+    <a-drawer
+      v-model:open="historyVisible"
+      :title="`执行历史：${historyJob?.name ?? ''}`"
+      width="720"
+      destroy-on-close
+    >
+      <a-table
+        :data-source="historyLogs"
+        :columns="historyColumns"
+        :loading="historyLoading"
+        row-key="id"
+        size="middle"
+        :pagination="historyPagination"
+        @change="onHistoryPageChange"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'success'">
+            <a-tag :color="record.success ? 'green' : 'red'">{{ record.success ? '成功' : '失败' }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'durationMs'">
+            {{ record.durationMs }} ms
+          </template>
+          <template v-else-if="column.key === 'retryIndex'">
+            {{ record.retryIndex === 0 ? '首次' : `第 ${record.retryIndex} 次重试` }}
+          </template>
+          <template v-else-if="column.key === 'message'">
+            <span v-if="record.message" class="error-text">{{ record.message }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </template>
+      </a-table>
+    </a-drawer>
   </div>
 </template>
 

@@ -111,11 +111,88 @@ export function getNotifyChannel(): Promise<Record<string, string>> {
   });
 }
 
-/** 保存通知渠道配置（整体覆盖；通道未接线，仅供配置留存） */
+/** 保存通知渠道配置（整体覆盖，保存即生效；本操作自动留痕） */
 export function saveNotifyChannel(configs: Record<string, string>): Promise<string> {
   return request<string>({
     url: '/identity/notify-channel',
     method: 'put',
     data: configs,
   });
+}
+
+/** 发送测试消息验证接线（channel=email/dingtalk；结果落发送记录） */
+export function sendNotifyTest(channel: 'email' | 'dingtalk'): Promise<string> {
+  return request<string>({
+    url: '/identity/notify-channel/test',
+    method: 'post',
+    data: { channel },
+  });
+}
+
+/** 通知发送记录行（成功/失败留痕） */
+export interface NotifyLogItem {
+  id: string;
+  channel: string;
+  target?: string | null;
+  subject?: string | null;
+  success: boolean;
+  error?: string | null;
+  createdAt: string;
+}
+
+/** 通知发送记录分页（倒序，最新在前） */
+export function getNotifyLogs(params: { pageIndex: number; pageSize: number }): Promise<{
+  total: number;
+  pageIndex: number;
+  pageSize: number;
+  items: NotifyLogItem[];
+}> {
+  return request({
+    url: '/identity/notify-channel/logs',
+    method: 'get',
+    params,
+  });
+}
+
+/** 告警规则（服务下线 / 任务连续失败时按阈值触发通知） */
+export interface AlertRuleItem {
+  id: string;
+  name: string;
+  /** 事件类型：SERVICE_DOWN / JOB_FAIL */
+  eventType: 'SERVICE_DOWN' | 'JOB_FAIL' | string;
+  /** 连续失败阈值（最小 1） */
+  threshold: number;
+  /** 通知渠道（逗号分隔）：email / dingtalk */
+  channels: string;
+  enabled: boolean;
+  remark?: string | null;
+}
+
+export interface AlertRuleSaveParams {
+  id?: string;
+  name: string;
+  eventType: 'SERVICE_DOWN' | 'JOB_FAIL';
+  threshold: number;
+  channels: string;
+  enabled: boolean;
+  remark?: string;
+}
+
+/** 告警规则清单 */
+export function getAlertRules(): Promise<AlertRuleItem[]> {
+  return request<AlertRuleItem[]>({ url: '/identity/alert-rules', method: 'get' });
+}
+
+/** 新增或更新告警规则（本操作自动留痕） */
+export function saveAlertRule(rule: AlertRuleSaveParams): Promise<string> {
+  return request<string>({
+    url: '/identity/alert-rules',
+    method: rule.id ? 'put' : 'post',
+    data: rule,
+  });
+}
+
+/** 删除告警规则（软删除；本操作自动留痕） */
+export function deleteAlertRule(id: string): Promise<string> {
+  return request<string>({ url: `/identity/alert-rules/${id}`, method: 'delete' });
 }
