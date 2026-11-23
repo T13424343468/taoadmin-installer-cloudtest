@@ -46,6 +46,7 @@ public static class DbInitializer
         SeedAuditMenus(db, snowflake);
         SeedResourceMonitorMenu(db, snowflake);
         SeedApiDocsMenu(db, snowflake);
+        SeedCodeGenMenu(db, snowflake);
         // 菜单归并（老板反馈⑨）：示例类页面（租户/站内消息/工作流）单独成「示例演示」模块
         RegroupDemoMenus(db, snowflake);
 
@@ -140,6 +141,26 @@ public static class DbInitializer
         var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
         if (adminRole != null)
             db.Insertable(new SysRoleMenu { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now }).ExecuteCommand();
+    }
+
+    /// <summary>代码生成器菜单与权限种子（逐项幂等：已有数据不重复插入，兼容老库增量升级）</summary>
+    private static void SeedCodeGenMenu(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
+    {
+        var now = DateTime.Now;
+        var sysDir = db.Queryable<SysMenu>().First(m => m.MenuName == "系统管理" && m.ParentId == 0);
+        if (sysDir == null || db.Queryable<SysMenu>().Any(m => m.Component == "codegen/index")) return;
+
+        var menu = new SysMenu { Id = snowflake.NextId(), ParentId = sysDir.Id, MenuName = "代码生成", MenuType = 1, Path = "/system/codegen", Component = "codegen/index", OrderNum = 7, Visible = true, Status = 1, CreatedAt = now, UpdatedAt = now };
+        var perm = new SysMenu { Id = snowflake.NextId(), ParentId = menu.Id, MenuName = "代码生成管理", MenuType = 2, PermsCode = "sys:codegen:manage", OrderNum = 1, Status = 1, CreatedAt = now, UpdatedAt = now };
+        db.Insertable(new List<SysMenu> { menu, perm }).ExecuteCommand();
+
+        var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
+        if (adminRole != null)
+            db.Insertable(new List<SysRoleMenu>
+            {
+                new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now },
+                new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = perm.Id, CreatedAt = now, UpdatedAt = now }
+            }).ExecuteCommand();
     }
 
     /// <summary>站点参数菜单与权限种子（逐项幂等：已有数据不重复插入，兼容老库增量升级）</summary>
