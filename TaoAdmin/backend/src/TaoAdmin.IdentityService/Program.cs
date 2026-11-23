@@ -124,6 +124,7 @@ builder.Services.AddScoped<DictAppService>();
 builder.Services.AddScoped<OperationLogAppService>();
 builder.Services.AddScoped<SiteConfigAppService>();
 builder.Services.AddScoped<AnnouncementAppService>();
+builder.Services.AddScoped<CodeGenAppService>();
 builder.Services.AddScoped<UserExcelAppService>();
 // 资源监控阈值（②）：存站点配置键，监控页可改
 builder.Services.AddScoped<ResourceThresholdProvider>();
