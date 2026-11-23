@@ -12,3 +12,5 @@ wt-*/
 TaoAdmin-addr/
 TaoAdmin-be/
 TaoAdmin-fe/
+TaoAdmin/deploy/windows/TaoAdminDeployer/coverage/
+TaoAdmin/backend/coverage/

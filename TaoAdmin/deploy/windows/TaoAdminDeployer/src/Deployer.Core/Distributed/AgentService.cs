@@ -165,8 +165,11 @@ public sealed class AgentService
         var result = new AgentTaskResult { TaskId = task.TaskId };
         var (ok, error) = await HealthCheckAsync(PrepareComposeFile(task), ct);
         result.Success = ok;
-        result.Error = ok ? null : error;
-        if (!ok) result.Output.Add(error ?? "健康检查失败");
+        if (!ok)
+        {
+            result.Error = error;      // HealthCheckAsync 契约：失败必带原因
+            result.Output.Add(error!);
+        }
         return result;
     }
 
@@ -190,7 +193,7 @@ public sealed class AgentService
     private string ComposeFileOf(NodeManifest? manifest)
         => Path.Combine(_opt.WorkDir, "docker-compose.yml");
 
-    private string CommandFor(string phase, NodeManifest? manifest) => phase switch
+    internal string CommandFor(string phase, NodeManifest? manifest) => phase switch
     {
         PhaseEnv => "docker info", // 容器环境由 SSH 引导预装；代理只校验可用
         PhasePull => $"docker compose -f {ComposeFileOf(manifest)} pull",

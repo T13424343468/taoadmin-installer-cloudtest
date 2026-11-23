@@ -87,7 +87,8 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, Sn
             .Where(f => f.IsDeleted == false)
             .Select(f => new { Count = SqlFunc.AggregateCount(f.Id), Bytes = SqlFunc.AggregateSum(f.Size) })
             .FirstAsync();
-        return (row?.Count ?? 0, row?.Bytes ?? 0);
+        // SqlSugar 聚合投影恒返回一行（空集 COUNT/SUM 均为 0，实测探针验证），无 null 行可走
+        return (row.Count, row.Bytes);
     }
 
     /// <summary>游标格式：Base64("Id")；解析失败按无游标处理</summary>

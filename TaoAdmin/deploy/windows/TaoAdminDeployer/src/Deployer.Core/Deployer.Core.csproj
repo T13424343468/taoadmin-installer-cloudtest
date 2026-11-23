@@ -11,4 +11,8 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Deployer.Core.Tests" />
+  </ItemGroup>
+
 </Project>

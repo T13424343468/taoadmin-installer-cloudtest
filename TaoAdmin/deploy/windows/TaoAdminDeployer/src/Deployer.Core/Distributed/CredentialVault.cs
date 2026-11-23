@@ -13,12 +13,19 @@ public sealed class CredentialVault : ICredentialVault
 {
     private readonly string _dir;
     private readonly byte[] _key;
+    private readonly Func<bool> _unixFileModeSupported;
 
-    public CredentialVault(string vaultDir, byte[]? masterKey = null)
+    /// <summary>凭据库：密文落盘、密钥文件托管。</summary>
+    /// <param name="vaultDir">凭据库目录。</param>
+    /// <param name="masterKey">显式主密钥（32 字节）；缺省时从密钥文件加载或新建。</param>
+    /// <param name="unixFileModeSupported">平台能力探针：当前平台是否支持 UnixFileMode。
+    /// Windows 无此 API（由目录 ACL 兜底），跳过权限收紧；测试可注入以实测两条路径。</param>
+    public CredentialVault(string vaultDir, byte[]? masterKey = null, Func<bool>? unixFileModeSupported = null)
     {
         if (string.IsNullOrWhiteSpace(vaultDir)) throw new ArgumentException("凭据库目录不能为空", nameof(vaultDir));
         _dir = vaultDir;
         Directory.CreateDirectory(_dir);
+        _unixFileModeSupported = unixFileModeSupported ?? (() => !OperatingSystem.IsWindows());
         _key = masterKey ?? LoadOrCreateKey();
     }
 
@@ -40,9 +47,15 @@ public sealed class CredentialVault : ICredentialVault
         }
         var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
         File.WriteAllBytes(keyFile, key);
-        try { File.SetUnixFileMode(keyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
-        catch (PlatformNotSupportedException) { /* Windows 无此 API */ }
+        RestrictToOwnerOnly(keyFile);
         return key;
+    }
+
+    /// <summary>权限收紧：仅属主可读写。不支持 UnixFileMode 的平台跳过（目录 ACL 兜底）。</summary>
+    private void RestrictToOwnerOnly(string path)
+    {
+        if (!_unixFileModeSupported()) return;
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     public void Store(string nodeId, string secret)
@@ -58,8 +71,7 @@ public sealed class CredentialVault : ICredentialVault
         nonce.CopyTo(blob, 4);
         cipher.CopyTo(blob, 16);
         File.WriteAllBytes(PathFor(nodeId), blob);
-        try { File.SetUnixFileMode(PathFor(nodeId), UnixFileMode.UserRead | UnixFileMode.UserWrite); }
-        catch (PlatformNotSupportedException) { }
+        RestrictToOwnerOnly(PathFor(nodeId));
     }
 
     public string? Retrieve(string nodeId)
