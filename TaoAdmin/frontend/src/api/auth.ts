@@ -71,6 +71,24 @@ export function getUserInfo(): Promise<UserInfo> {
   });
 }
 
+/** 忘记密码：申请重置令牌（发到账号绑定邮箱；后端统一提示，不泄露账号是否存在） */
+export function forgotPassword(username: string): Promise<void> {
+  return request<void>({
+    url: '/identity/auth/forgot-password',
+    method: 'post',
+    data: { username },
+  });
+}
+
+/** 重置密码：凭邮箱收到的令牌设置新密码（令牌一次性、15 分钟内有效） */
+export function resetPassword(username: string, token: string, newPassword: string): Promise<void> {
+  return request<void>({
+    url: '/identity/auth/reset-password',
+    method: 'post',
+    data: { username, token, newPassword },
+  });
+}
+
 /** 退出登录 */
 export function logout(): Promise<void> {
   return request<void>({

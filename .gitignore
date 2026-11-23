@@ -8,3 +8,7 @@ TaoFiles/src/TaoFiles.Api/uploads/
 .tmp-exe2/
 TestResults/
 .nfs*
+wt-*/
+TaoAdmin-addr/
+TaoAdmin-be/
+TaoAdmin-fe/

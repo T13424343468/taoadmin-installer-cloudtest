@@ -62,7 +62,33 @@
         </a-form-item>
       </a-form>
 
+      <div class="login-extra">
+        <a @click="openForgot">忘记密码？</a>
+      </div>
+
       <div class="login-tip">默认账号：admin / Admin@123</div>
+
+      <!-- ⑱自助找回密码：账号 → 邮箱令牌 → 新密码 -->
+      <a-modal v-model:open="forgotOpen" title="找回密码" :footer="null" width="420px">
+        <a-form layout="vertical">
+          <a-form-item label="账号" required>
+            <a-input v-model:value="forgotForm.username" placeholder="请输入登录账号" />
+          </a-form-item>
+          <a-button block :loading="forgotLoading" @click="onRequestToken">发送重置令牌到邮箱</a-button>
+          <template v-if="tokenSent">
+            <a-form-item label="邮箱令牌" required style="margin-top: 16px">
+              <a-input v-model:value="forgotForm.token" placeholder="请输入邮件中的重置令牌" />
+            </a-form-item>
+            <a-form-item label="新密码" required>
+              <a-input-password
+                v-model:value="forgotForm.newPassword"
+                placeholder="至少 8 位，含大小写字母/数字/特殊字符中 3 类"
+              />
+            </a-form-item>
+            <a-button type="primary" block :loading="resetLoading" @click="onReset">重置密码</a-button>
+          </template>
+        </a-form>
+      </a-modal>
     </div>
   </div>
 </template>
@@ -72,7 +98,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue';
-import { login } from '@/api/auth';
+import { login, forgotPassword, resetPassword } from '@/api/auth';
 import { getCaptcha } from '@/api/audit';
 import { useUserStore } from '@/stores/user';
 import { useSiteStore } from '@/api/site';
@@ -122,6 +148,61 @@ const rules = {
     { min: 5, message: '密码至少 5 位', trigger: 'blur' },
   ],
 };
+
+// ⑱自助找回密码
+const forgotOpen = ref(false);
+const forgotLoading = ref(false);
+const resetLoading = ref(false);
+const tokenSent = ref(false);
+const forgotForm = reactive({ username: '', token: '', newPassword: '' });
+
+function openForgot() {
+  forgotForm.username = form.username;
+  forgotForm.token = '';
+  forgotForm.newPassword = '';
+  tokenSent.value = false;
+  forgotOpen.value = true;
+}
+
+async function onRequestToken() {
+  if (!forgotForm.username.trim()) {
+    message.warning('请输入账号');
+    return;
+  }
+  forgotLoading.value = true;
+  try {
+    await forgotPassword(forgotForm.username.trim());
+    tokenSent.value = true;
+    message.success('如账号存在且已绑定邮箱，重置令牌已发送，请查收邮件');
+  } catch {
+    // 错误提示已在 request.ts 统一处理
+  } finally {
+    forgotLoading.value = false;
+  }
+}
+
+async function onReset() {
+  if (!forgotForm.token.trim()) {
+    message.warning('请输入邮件中的重置令牌');
+    return;
+  }
+  if (!forgotForm.newPassword) {
+    message.warning('请输入新密码');
+    return;
+  }
+  resetLoading.value = true;
+  try {
+    await resetPassword(forgotForm.username.trim(), forgotForm.token.trim(), forgotForm.newPassword);
+    message.success('密码重置成功，请使用新密码登录');
+    forgotOpen.value = false;
+    form.username = forgotForm.username.trim();
+    form.password = '';
+  } catch {
+    // 错误提示已在 request.ts 统一处理
+  } finally {
+    resetLoading.value = false;
+  }
+}
 
 async function onLogin() {
   loading.value = true;
@@ -192,6 +273,12 @@ async function onLogin() {
     color: rgba(0, 0, 0, 0.45);
     font-size: 13px;
   }
+}
+
+.login-extra {
+  margin-top: -12px;
+  text-align: right;
+  font-size: 13px;
 }
 
 .login-tip {

@@ -165,6 +165,7 @@ builder.Services.AddScoped<TaoAdmin.Common.Storage.IFileStorageProvider>(sp =>
         : new LocalFileStorageProvider(cfg.Root, sp.GetRequiredService<SnowflakeIdGenerator>().NextId);
 });
 // 密码策略：应用服务本身即策略读取口（改密/建人/登录注入同一实现）
+builder.Services.AddScoped<PasswordResetAppService>();
 builder.Services.AddScoped<PasswordPolicyAppService>();
 builder.Services.AddScoped<IPasswordPolicyProvider>(sp => sp.GetRequiredService<PasswordPolicyAppService>());
 // 行政区划（⑪地址库）：只读查询 + 后台更新（在线抓取民政部国家地名信息库，内置数据包兜底）
