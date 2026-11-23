@@ -288,8 +288,8 @@ public class AlertNotifierTests
         var log = db.Queryable<SysNotifyLog>().Single();
         Assert.False(log.Success);
         // 内容截断到 1000 字、错误信息截断到 500 字
-        Assert.Equal(1000, log.Content.Length);
-        Assert.Equal(500, log.Error!.Length);
+        Assert.Equal(1000, (log.Content ?? string.Empty).Length);
+        Assert.Equal(500, (log.Error ?? string.Empty).Length);
     }
 
     [Fact]

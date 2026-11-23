@@ -56,7 +56,6 @@ public class JobExecutionRecorderTests
         return new JobExecutionContextImpl(null!, bundle, new ScriptedJob());
     }
 
-    private static int _logId = 5000;
     private readonly SqlSugarClient _db;
     private readonly JobExecutionRecorder _recorder;
     private readonly RecordingEmailSender _email = new();
