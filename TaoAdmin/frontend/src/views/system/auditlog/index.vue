@@ -10,6 +10,7 @@
         <a-popconfirm title="立即按保留策略清理过期日志？" @confirm="onCleanup">
           <a-button danger :loading="cleaning">清理过期日志</a-button>
         </a-popconfirm>
+        <a-button :loading="exporting" @click="onExport">导出 Excel</a-button>
         <a-button v-if="selectedCount === 0 && total > 0" @click="onSelectAll">选中全部 {{ total }} 条</a-button>
       </a-space>
     </template>
@@ -67,7 +68,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { useBatchSelection } from '@/composables/useBatchSelection';
 import { pageAfterDelete } from '@/utils/listPage';
-import { getAuditLogs, cleanupAuditLogs, batchDeleteAuditLogs, type AuditLogItem } from '@/api/audit';
+import { getAuditLogs, cleanupAuditLogs, batchDeleteAuditLogs, exportAuditLogs, type AuditLogItem } from '@/api/audit';
 import type { Dayjs } from 'dayjs';
 
 const columns = [
@@ -181,6 +182,31 @@ async function onCleanup() {
     await load();
   } finally {
     cleaning.value = false;
+  }
+}
+
+// ============ 导出 Excel（⑮）：按当前筛选条件，后端上限 5 万条 ============
+
+const exporting = ref(false);
+
+async function onExport() {
+  exporting.value = true;
+  try {
+    const blob = await exportAuditLogs({
+      category: query.category,
+      userName: query.userName,
+      success: success.value,
+      ...rangeParams(),
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-log-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('导出完成，已按当前筛选条件生成');
+  } finally {
+    exporting.value = false;
   }
 }
 

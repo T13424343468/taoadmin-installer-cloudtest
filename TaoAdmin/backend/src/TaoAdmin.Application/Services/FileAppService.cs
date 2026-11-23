@@ -44,17 +44,25 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, Sn
     /// <summary>
     /// 分页查询文件记录（管理端，keyword 按原文件名模糊）。
     /// 亿级优化：总数按关键字缓存 5 分钟；深翻页走 Id 游标（Keyset），恒定速度不随页码衰减。
+    /// ⑯：支持按类型（contentType 前缀，如 image/）与时间区间筛选。
     /// </summary>
-    public async Task<PageResult<SysFile>> PageAsync(int pageIndex, int pageSize, string? keyword, string? cursor = null)
+    public async Task<PageResult<SysFile>> PageAsync(int pageIndex, int pageSize, string? keyword,
+        string? contentType = null, DateTime? begin = null, DateTime? end = null, string? cursor = null)
     {
         if (pageIndex < 1) pageIndex = 1;
         if (pageSize is < 1 or > 100) pageSize = 10;
         var query = db.Queryable<SysFile>().Where(f => f.IsDeleted == false);
         if (!string.IsNullOrWhiteSpace(keyword))
             query = query.Where(f => f.FileName.Contains(keyword.Trim()));
+        if (!string.IsNullOrWhiteSpace(contentType))
+            query = query.Where(f => f.ContentType != null && f.ContentType.StartsWith(contentType.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (begin.HasValue)
+            query = query.Where(f => f.CreatedAt >= begin!.Value);
+        if (end.HasValue)
+            query = query.Where(f => f.CreatedAt <= end!.Value);
 
-        // 总数按关键字缓存 5 分钟：亿级表上 COUNT 全表代价高，翻页期间复用同一口径
-        var cacheKey = $"file:total:{keyword?.Trim()}";
+        // 总数按关键字+筛选缓存 5 分钟：亿级表上 COUNT 全表代价高，翻页期间复用同一口径
+        var cacheKey = $"file:total:{keyword?.Trim()}:{contentType?.Trim()}:{begin:yyyyMMddHHmmss}:{end:yyyyMMddHHmmss}";
         var total = await cache.GetOrCreateAsync(cacheKey, async e =>
         {
             e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
@@ -70,6 +78,16 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, Sn
             .Take(pageSize).ToListAsync();
         string? nextCursor = items.Count == pageSize && items.Count > 0 ? EncodeCursor(items[^1].Id) : null;
         return new PageResult<SysFile>(total, pageIndex, pageSize, items, nextCursor);
+    }
+
+    /// <summary>存储占用统计（⑯）：文件数与总字节数（未删除文件）</summary>
+    public async Task<(long Count, long TotalBytes)> StorageStatsAsync()
+    {
+        var row = await db.Queryable<SysFile>()
+            .Where(f => f.IsDeleted == false)
+            .Select(f => new { Count = SqlFunc.AggregateCount(f.Id), Bytes = SqlFunc.AggregateSum(f.Size) })
+            .FirstAsync();
+        return (row?.Count ?? 0, row?.Bytes ?? 0);
     }
 
     /// <summary>游标格式：Base64("Id")；解析失败按无游标处理</summary>

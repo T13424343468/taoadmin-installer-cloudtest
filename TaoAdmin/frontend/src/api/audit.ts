@@ -103,6 +103,16 @@ export function batchDeleteAuditLogs(ids: string[]): Promise<{ deleted: number }
   });
 }
 
+/** 按当前筛选条件导出审计日志为 xlsx（⑮；后端上限 5 万条，返回文件流） */
+export function exportAuditLogs(params: Omit<AuditLogQuery, 'pageIndex' | 'pageSize' | 'cursor'>): Promise<Blob> {
+  return request<Blob>({
+    url: '/identity/audit/log/export',
+    method: 'get',
+    params,
+    responseType: 'blob',
+  });
+}
+
 /** 通知渠道配置（未配置项返回空串） */
 export function getNotifyChannel(): Promise<Record<string, string>> {
   return request<Record<string, string>>({
