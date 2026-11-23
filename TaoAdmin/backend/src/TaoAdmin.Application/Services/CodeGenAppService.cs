@@ -584,38 +584,43 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
         var sb = new StringBuilder();
         sb.AppendLine("// ==== CODEGEN GENERATED FILE（生成区：重复生成会覆盖本文件） ====");
         sb.AppendLine($"// {design.DisplayName} 接口定义");
-        sb.AppendLine("import request from '@/utils/request'");
+        sb.AppendLine("import { request } from './request';");
         sb.AppendLine();
         sb.AppendLine($"export interface {entityName}Item {{");
-        sb.AppendLine("  id: string");
+        sb.AppendLine("  id: string;");
         foreach (var f in fields)
-            sb.AppendLine($"  {f.name}: {TsType(f)}");
+            sb.AppendLine($"  {f.name}: {TsType(f)};");
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine($"export interface {entityName}Save {{");
-        sb.AppendLine("  id?: string");
+        sb.AppendLine("  id?: string;");
         foreach (var f in fields)
-            sb.AppendLine($"  {f.name}: {TsType(f)}");
+            sb.AppendLine($"  {f.name}: {TsType(f)};");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine($"export function page{entityName}(params: {{ pageIndex: number; pageSize: number; keyword?: string }}) {{");
-        sb.AppendLine($"  return request.get('/{design.TableName}', {{ params }})");
+        sb.AppendLine("/** 分页查询 */");
+        sb.AppendLine($"export function page{entityName}(params: {{ pageIndex?: number; pageSize?: number; keyword?: string }}): Promise<{{ total: number; items: {entityName}Item[] }}> {{");
+        sb.AppendLine($"  return request({{ url: '/identity/{design.TableName}', method: 'get', params }});");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine($"export function get{entityName}(id: string) {{");
-        sb.AppendLine($"  return request.get(`/{design.TableName}/${{id}}`)");
+        sb.AppendLine("/** 详情 */");
+        sb.AppendLine($"export function get{entityName}(id: string): Promise<{entityName}Item> {{");
+        sb.AppendLine($"  return request({{ url: `/identity/{design.TableName}/${{id}}`, method: 'get' }});");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine($"export function save{entityName}(data: {entityName}Save) {{");
-        sb.AppendLine($"  return request.post('/{design.TableName}', data)");
+        sb.AppendLine("/** 保存（新增或更新） */");
+        sb.AppendLine($"export function save{entityName}(data: {entityName}Save): Promise<void> {{");
+        sb.AppendLine($"  return request({{ url: '/identity/{design.TableName}', method: 'post', data: {{ ...data, id: data.id ? Number(data.id) : undefined }} }});");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine($"export function delete{entityName}(id: string) {{");
-        sb.AppendLine($"  return request.delete(`/{design.TableName}/${{id}}`)");
+        sb.AppendLine("/** 删除（单条） */");
+        sb.AppendLine($"export function delete{entityName}(id: string): Promise<void> {{");
+        sb.AppendLine($"  return request({{ url: `/identity/{design.TableName}/${{id}}`, method: 'delete' }});");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine($"export function batchDelete{entityName}(ids: string[]) {{");
-        sb.AppendLine($"  return request.post('/{design.TableName}/batch-delete', {{ ids }})");
+        sb.AppendLine("/** 批量删除 */");
+        sb.AppendLine($"export function batchDelete{entityName}(ids: string[]): Promise<{{ deleted: number }}> {{");
+        sb.AppendLine($"  return request({{ url: '/identity/{design.TableName}/batch-delete', method: 'post', data: {{ ids: ids.map(Number) }} }});");
         sb.AppendLine("}");
         return sb.ToString();
     }
@@ -632,83 +637,109 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
         var listFields = fields.Where(f => f.showInList).ToList();
         var sb = new StringBuilder();
         sb.AppendLine("<!-- ==== CODEGEN GENERATED FILE（生成区：重复生成会覆盖本文件） ====");
-        sb.AppendLine($"     {design.DisplayName} 列表页：分页 + 搜索 + 表单弹窗（增/改）+ 批量删除 -->");
+        sb.AppendLine($"     {design.DisplayName} 列表页：分页 + 搜索 + 表单弹窗（增/改）+ 批量删除（Ant Design Vue 4） -->");
         sb.AppendLine("<template>");
-        sb.AppendLine("  <div class=\"page\">");
-        sb.AppendLine("    <div class=\"toolbar\">");
-        sb.AppendLine("      <el-input v-model=\"keyword\" placeholder=\"搜索\" clearable style=\"width: 220px\" @keyup.enter=\"load\" />");
-        sb.AppendLine("      <el-button type=\"primary\" @click=\"load\">查询</el-button>");
-        sb.AppendLine("      <el-button type=\"success\" @click=\"openCreate\">新增</el-button>");
-        sb.AppendLine("      <el-button type=\"danger\" :disabled=\"!selection.length\" @click=\"onBatchDelete\">批量删除</el-button>");
+        sb.AppendLine("  <div class=\"page-container\">");
+        sb.AppendLine("    <!-- 搜索与操作区 -->");
+        sb.AppendLine("    <div class=\"table-operator\">");
+        sb.AppendLine("      <a-input v-model:value=\"keyword\" placeholder=\"搜索\" allow-clear style=\"width: 220px\" @press-enter=\"loadData()\" />");
+        sb.AppendLine("      <a-button type=\"primary\" style=\"margin-left: 8px\" @click=\"loadData()\">查询</a-button>");
+        sb.AppendLine("      <a-button type=\"primary\" style=\"margin-left: 12px\" @click=\"openCreate\">新增</a-button>");
+        sb.AppendLine("      <a-space v-if=\"selectedRowKeys.length > 0\" style=\"margin-left: 12px\">");
+        sb.AppendLine("        <span>已选 {{ selectedRowKeys.length }} 项</span>");
+        sb.AppendLine("        <a-button danger @click=\"onBatchDelete\">批量删除</a-button>");
+        sb.AppendLine("      </a-space>");
         sb.AppendLine("    </div>");
-        sb.AppendLine("    <el-table :data=\"rows\" v-loading=\"loading\" @selection-change=\"(s: any[]) => (selection = s)\">");
-        sb.AppendLine("      <el-table-column type=\"selection\" width=\"44\" />");
-        foreach (var f in listFields)
-        {
-            if (f.control == "dict" && f.dictCode != null)
-                sb.AppendLine($"      <el-table-column prop=\"{f.name}\" label=\"{f.label}\" />");
-            else if (f.dataType == "bool")
-                sb.AppendLine($"      <el-table-column prop=\"{f.name}\" label=\"{f.label}\"><template #default=\"{{ row }}\">{{{{ row.{f.name} ? '是' : '否' }}}}</template></el-table-column>");
-            else
-                sb.AppendLine($"      <el-table-column prop=\"{f.name}\" label=\"{f.label}\" />");
-        }
-        sb.AppendLine("      <el-table-column label=\"操作\" width=\"150\">");
-        sb.AppendLine("        <template #default=\"{ row }\">");
-        sb.AppendLine("          <el-button link type=\"primary\" @click=\"openEdit(row)\">编辑</el-button>");
-        sb.AppendLine("          <el-button link type=\"danger\" @click=\"onDelete(row)\">删除</el-button>");
+        sb.AppendLine();
+        sb.AppendLine("    <!-- 表格 -->");
+        sb.AppendLine("    <a-table");
+        sb.AppendLine("      :data-source=\"rows\"");
+        sb.AppendLine("      :columns=\"columns\"");
+        sb.AppendLine("      :loading=\"loading\"");
+        sb.AppendLine("      row-key=\"id\"");
+        sb.AppendLine("      size=\"middle\"");
+        sb.AppendLine("      :pagination=\"pagination\"");
+        sb.AppendLine("      :row-selection=\"{ selectedRowKeys, onChange: (k: any[]) => (selectedRowKeys = k) }\"");
+        sb.AppendLine("      @change=\"onTableChange\"");
+        sb.AppendLine("    >");
+        sb.AppendLine("      <template #bodyCell=\"{ column, record }\">");
+        sb.AppendLine("        <template v-if=\"column.key === 'action'\">");
+        sb.AppendLine("          <a-space>");
+        sb.AppendLine("            <a @click=\"openEdit(record)\">编辑</a>");
+        sb.AppendLine("            <a-popconfirm title=\"确定删除该条记录吗？\" @confirm=\"onDelete(record)\">");
+        sb.AppendLine("              <a class=\"danger-link\">删除</a>");
+        sb.AppendLine("            </a-popconfirm>");
+        sb.AppendLine("          </a-space>");
         sb.AppendLine("        </template>");
-        sb.AppendLine("      </el-table-column>");
-        sb.AppendLine("    </el-table>");
-        sb.AppendLine("    <el-pagination v-model:current-page=\"pageIndex\" v-model:page-size=\"pageSize\" :total=\"total\" layout=\"total, prev, pager, next\" @current-change=\"load\" />");
-        sb.AppendLine("    <el-dialog v-model=\"dialogVisible\" :title=\"form.id ? '编辑' : '新增'\" width=\"520px\">");
-        sb.AppendLine("      <el-form :model=\"form\" label-width=\"100px\">");
+        sb.AppendLine("        <template v-else-if=\"boolColumns.includes(column.key)\">");
+        sb.AppendLine("          {{ record[column.key] ? '是' : '否' }}");
+        sb.AppendLine("        </template>");
+        sb.AppendLine("      </template>");
+        sb.AppendLine("    </a-table>");
+        sb.AppendLine();
+        sb.AppendLine("    <!-- 新增/编辑弹窗 -->");
+        sb.AppendLine("    <a-modal v-model:open=\"dialogVisible\" :title=\"form.id ? '编辑' : '新增'\" :confirm-loading=\"saving\" @ok=\"onSave\">");
+        sb.AppendLine("      <a-form :model=\"form\" layout=\"vertical\">");
         foreach (var f in fields)
         {
+            var required = f.nullable ? "" : " required";
             var ctrl = f.control switch
             {
-                "number" => $"<el-input-number v-model=\"form.{f.name}\" />",
-                "date" => $"<el-date-picker v-model=\"form.{f.name}\" type=\"datetime\" />",
-                "textarea" => $"<el-input v-model=\"form.{f.name}\" type=\"textarea\" :rows=\"3\" />",
-                "dict" => $"<el-input v-model=\"form.{f.name}\" placeholder=\"{{{{ '字典 {f.dictCode}' }}}}\" />",
-                "switch" => $"<el-switch v-model=\"form.{f.name}\" />",
-                _ => $"<el-input v-model=\"form.{f.name}\" />"
+                "number" => $"<a-input-number v-model:value=\"form.{f.name}\" style=\"width: 100%\" />",
+                "date" => $"<a-date-picker v-model:value=\"form.{f.name}\" show-time value-format=\"YYYY-MM-DD HH:mm:ss\" style=\"width: 100%\" />",
+                "textarea" => $"<a-textarea v-model:value=\"form.{f.name}\" :rows=\"3\" />",
+                "dict" => $"<a-input v-model:value=\"form.{f.name}\" placeholder=\"字典 {f.dictCode}\" />",
+                "switch" => $"<a-switch v-model:checked=\"form.{f.name}\" />",
+                _ => $"<a-input v-model:value=\"form.{f.name}\" />"
             };
-            sb.AppendLine($"        <el-form-item label=\"{f.label}\"{(f.nullable ? "" : " required")}>{ctrl}</el-form-item>");
+            sb.AppendLine($"        <a-form-item label=\"{f.label}\" name=\"{f.name}\"{required}>");
+            sb.AppendLine($"          {ctrl}");
+            sb.AppendLine("        </a-form-item>");
         }
-        sb.AppendLine("      </el-form>");
-        sb.AppendLine("      <template #footer>");
-        sb.AppendLine("        <el-button @click=\"dialogVisible = false\">取消</el-button>");
-        sb.AppendLine("        <el-button type=\"primary\" @click=\"onSave\">保存</el-button>");
-        sb.AppendLine("      </template>");
-        sb.AppendLine("    </el-dialog>");
+        sb.AppendLine("      </a-form>");
+        sb.AppendLine("    </a-modal>");
         sb.AppendLine("  </div>");
         sb.AppendLine("</template>");
         sb.AppendLine();
         sb.AppendLine("<script setup lang=\"ts\">");
         sb.AppendLine($"import {{ page{entityName}, get{entityName}, save{entityName}, delete{entityName}, batchDelete{entityName} }} from '@/api/{camel}'");
-        sb.AppendLine("import { ElMessage, ElMessageBox } from 'element-plus'");
-        sb.AppendLine("import { ref } from 'vue'");
+        sb.AppendLine("import { message, Modal } from 'ant-design-vue'");
+        sb.AppendLine("import { ref, reactive } from 'vue'");
+        sb.AppendLine();
+        var colItems = listFields.Select(f => $"{{ title: '{f.label}', dataIndex: '{f.name}', key: '{f.name}' }}");
+        sb.AppendLine($"const columns = [");
+        foreach (var c in colItems)
+            sb.AppendLine($"  {c},");
+        sb.AppendLine("  { title: '操作', key: 'action', width: 140 },");
+        sb.AppendLine("];");
+        var boolCols = listFields.Where(f => f.dataType == "bool").Select(f => $"'{f.name}'");
+        sb.AppendLine($"const boolColumns = [{string.Join(", ", boolCols)}];");
         sb.AppendLine();
         sb.AppendLine("const rows = ref<any[]>([])");
-        sb.AppendLine("const total = ref(0)");
-        sb.AppendLine("const pageIndex = ref(1)");
-        sb.AppendLine("const pageSize = ref(10)");
-        sb.AppendLine("const keyword = ref('')");
         sb.AppendLine("const loading = ref(false)");
-        sb.AppendLine("const selection = ref<any[]>([])");
+        sb.AppendLine("const saving = ref(false)");
+        sb.AppendLine("const keyword = ref('')");
+        sb.AppendLine("const selectedRowKeys = ref<any[]>([])");
         sb.AppendLine("const dialogVisible = ref(false)");
+        sb.AppendLine("const pagination = reactive({ current: 1, pageSize: 10, total: 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` })");
         sb.AppendLine($"const emptyForm = () => ({{ id: undefined, {string.Join(", ", fields.Select(f => $"{f.name}: {TsInit(f)}"))} }})");
         sb.AppendLine("const form = ref<any>(emptyForm())");
         sb.AppendLine();
-        sb.AppendLine("async function load() {");
+        sb.AppendLine("async function loadData() {");
         sb.AppendLine("  loading.value = true");
         sb.AppendLine("  try {");
-        sb.AppendLine($"    const res = await page{entityName}({{ pageIndex: pageIndex.value, pageSize: pageSize.value, keyword: keyword.value || undefined }})");
-        sb.AppendLine("    rows.value = res.data.items");
-        sb.AppendLine("    total.value = res.data.total");
+        sb.AppendLine($"    const res = await page{entityName}({{ pageIndex: pagination.current, pageSize: pagination.pageSize, keyword: keyword.value || undefined }})");
+        sb.AppendLine("    rows.value = res.items");
+        sb.AppendLine("    pagination.total = res.total");
         sb.AppendLine("  } finally {");
         sb.AppendLine("    loading.value = false");
         sb.AppendLine("  }");
+        sb.AppendLine("}");
+        sb.AppendLine();
+        sb.AppendLine("function onTableChange(p: any) {");
+        sb.AppendLine("  pagination.current = p.current");
+        sb.AppendLine("  pagination.pageSize = p.pageSize");
+        sb.AppendLine("  loadData()");
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("function openCreate() {");
@@ -717,33 +748,43 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("async function openEdit(row: any) {");
-        sb.AppendLine($"  const res = await get{entityName}(row.id)");
-        sb.AppendLine("  form.value = res.data");
+        sb.AppendLine($"  form.value = await get{entityName}(row.id)");
         sb.AppendLine("  dialogVisible.value = true");
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("async function onSave() {");
-        sb.AppendLine($"  await save{entityName}(form.value)");
-        sb.AppendLine("  ElMessage.success('保存成功')");
-        sb.AppendLine("  dialogVisible.value = false");
-        sb.AppendLine("  await load()");
+        sb.AppendLine("  saving.value = true");
+        sb.AppendLine("  try {");
+        sb.AppendLine($"    await save{entityName}(form.value)");
+        sb.AppendLine("    message.success('保存成功')");
+        sb.AppendLine("    dialogVisible.value = false");
+        sb.AppendLine("    await loadData()");
+        sb.AppendLine("  } finally {");
+        sb.AppendLine("    saving.value = false");
+        sb.AppendLine("  }");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine("async function onDelete(row: any) {");
-        sb.AppendLine("  await ElMessageBox.confirm('确认删除该条记录？', '提示', { type: 'warning' })");
-        sb.AppendLine($"  await delete{entityName}(row.id)");
-        sb.AppendLine("  ElMessage.success('删除成功')");
-        sb.AppendLine("  await load()");
+        sb.AppendLine("function onDelete(row: any) {");
+        sb.AppendLine($"  return delete{entityName}(row.id).then(() => {{");
+        sb.AppendLine("    message.success('删除成功')");
+        sb.AppendLine("    return loadData()");
+        sb.AppendLine("  })");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine("async function onBatchDelete() {");
-        sb.AppendLine("  await ElMessageBox.confirm(`确认删除选中的 ${selection.value.length} 条记录？`, '提示', { type: 'warning' })");
-        sb.AppendLine($"  const res = await batchDelete{entityName}(selection.value.map((r: any) => r.id))");
-        sb.AppendLine("  ElMessage.success(res.message || '删除成功')");
-        sb.AppendLine("  await load()");
+        sb.AppendLine("function onBatchDelete() {");
+        sb.AppendLine("  Modal.confirm({");
+        sb.AppendLine("    title: '批量删除',");
+        sb.AppendLine($"    content: `确认删除选中的 ${{selectedRowKeys.value.length}} 条记录？`,");
+        sb.AppendLine("    onOk: async () => {");
+        sb.AppendLine($"      const res = await batchDelete{entityName}(selectedRowKeys.value)");
+        sb.AppendLine("      message.success(`已删除 ${res.deleted} 条`)");
+        sb.AppendLine("      selectedRowKeys.value = []");
+        sb.AppendLine("      await loadData()");
+        sb.AppendLine("    }");
+        sb.AppendLine("  })");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine("load()");
+        sb.AppendLine("loadData()");
         sb.AppendLine("</script>");
         return sb.ToString();
     }

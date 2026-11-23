@@ -217,8 +217,10 @@ public class CodeGenAppServiceTests
         var api = result.files.First(f => f.path.EndsWith("/api/bizContract.ts"));
         Assert.Contains("export function pageBizContract", api.content);
         var page = result.files.First(f => f.path.EndsWith("views/bizContract/index.vue"));
-        Assert.Contains("el-table", page.content);
+        Assert.Contains("a-table", page.content);
+        Assert.Contains("ant-design-vue", page.content);
         Assert.Contains("批量删除", page.content);
+        Assert.Contains("/identity/biz_contract", api.content);
 
         // 生成文件全部带标记头（SQL 初始化文件除外）
         foreach (var f in result.files.Where(f => f.path.EndsWith(".cs") || f.path.EndsWith(".ts") || f.path.EndsWith(".vue")))
