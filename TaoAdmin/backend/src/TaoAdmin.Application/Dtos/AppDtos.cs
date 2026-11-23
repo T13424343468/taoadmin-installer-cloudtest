@@ -27,6 +27,20 @@ public class VerifyPasswordRequest
     public string password { get; set; } = string.Empty;
 }
 
+/// <summary>忘记密码申请（⑱：凭账号申请重置令牌，令牌发到绑定邮箱）</summary>
+public class ForgotPasswordRequest
+{
+    public string username { get; set; } = string.Empty;
+}
+
+/// <summary>重置密码请求（⑱：凭邮箱收到的令牌设置新密码）</summary>
+public class ResetPasswordRequest
+{
+    public string username { get; set; } = string.Empty;
+    public string token { get; set; } = string.Empty;
+    public string newPassword { get; set; } = string.Empty;
+}
+
 /// <summary>菜单树节点（类型字符串：dir/menu/button）</summary>
 public class MenuNodeDto
 {

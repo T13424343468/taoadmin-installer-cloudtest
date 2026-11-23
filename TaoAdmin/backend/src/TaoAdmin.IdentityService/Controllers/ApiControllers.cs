@@ -14,7 +14,12 @@ public class AuthController : BaseApiController
 {
     private readonly AuthAppService _auth;
 
-    public AuthController(AuthAppService auth) => _auth = auth;
+    private readonly PasswordResetAppService _reset;
+
+    public AuthController(AuthAppService auth, PasswordResetAppService reset)
+    {
+        _auth = auth; _reset = reset;
+    }
 
     /// <summary>账号密码登录（登录来源登记进在线会话，供在线名单与强制下线使用）</summary>
     [HttpPost("login")]
@@ -38,6 +43,24 @@ public class AuthController : BaseApiController
     {
         await _auth.VerifyPasswordAsync(User.GetUserId(), request.password);
         return ApiOk("密码正确");
+    }
+
+    /// <summary>忘记密码：申请重置令牌（发到账号绑定邮箱；统一提示，不泄露账号是否存在）</summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<ApiResult<object>> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        await _reset.RequestResetAsync(request.username);
+        return ApiOk("如账号存在且已绑定邮箱，重置令牌已发送，请查收邮件");
+    }
+
+    /// <summary>重置密码：凭邮箱收到的令牌设置新密码（令牌一次性、15 分钟内有效）</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<ApiResult<object>> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        await _reset.ResetAsync(request.username, request.token, request.newPassword);
+        return ApiOk("密码重置成功，请使用新密码登录");
     }
 
     /// <summary>退出登录（吊销当前会话并清理刷新令牌）</summary>
