@@ -51,6 +51,11 @@ builder.Services.AddSqlSugar(builder.Configuration);
 var redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ => StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnection));
 builder.Services.AddSingleton<RedisHelper>();
+// 资源监控（②）：本机指标采集器
+builder.Services.AddSingleton<TaoAdmin.Common.Monitoring.ResourceCollector>(_ =>
+    new TaoAdmin.Common.Monitoring.ResourceCollector(
+        "taoadmin-task",
+        new TaoAdmin.Common.Monitoring.ProcessResourceSource()));
 builder.Services.AddSingleton(_ => new SnowflakeIdGenerator(
     builder.Configuration.GetValue<long>("Snowflake:DatacenterId", 1),
     builder.Configuration.GetValue<long>("Snowflake:WorkerId", 2)));
@@ -100,6 +105,9 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "taoadmin-task" }));
+// 资源指标端点（②）：本进程 CPU/内存/磁盘/网络快照，供网关聚合与监控中心采样
+app.MapGet("/metrics/resources", (TaoAdmin.Common.Monitoring.ResourceCollector collector) =>
+    Results.Ok(collector.Collect()));
 app.UseAuthorization();
 // 接口鉴权：按 SysApi 权限码校验（超管放行）
 app.UseMiddleware<TaoAdmin.Infrastructure.Web.ApiAuthMiddleware>();

@@ -8,13 +8,12 @@ namespace TaoFiles.Api.Controllers;
 [ApiController]
 public class FileController(FileAppService svc, IFileStorageProvider storage) : ControllerBase
 {
-    /// <summary>上传文件（multipart/form-data，字段名 file）</summary>
+    /// <summary>上传文件（multipart/form-data，字段名 file；体积上限走站点配置，超限返回明确中文报错）</summary>
     /// <remarks>
     /// 集成示例：业务系统上传后只需保存返回的 fileUrl（相对路径）。
     /// 相同内容的文件重复上传会命中复用（reused=true），不占额外空间。
     /// </remarks>
     [HttpPost("/api/files/upload")]
-    [RequestSizeLimit(200 * 1024 * 1024)]
     public async Task<IActionResult> Upload([FromForm] IFormFile file,
         [FromForm] string? uploadBy, [FromForm] string? source)
     {

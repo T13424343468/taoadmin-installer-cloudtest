@@ -80,4 +80,74 @@ public class SiteConfigAppServiceTests
         Assert.Equal("", dto.siteLogo);      // 未配置 Logo 前台用默认图标
         Assert.Equal(SiteConfigAppService.DefaultSiteFooter, dto.siteFooter);
     }
+
+    // ==================== 上传体积上限（⑬） ====================
+
+    [Fact]
+    public async Task GetAsync_未配置上传上限_返回默认50()
+    {
+        var (svc, _) = Create();
+        var dto = await svc.GetAsync();
+        Assert.Equal(SiteConfigAppService.DefaultUploadMaxSizeMB, dto.uploadMaxSizeMB);
+        Assert.Equal(50, dto.uploadMaxSizeMB);
+    }
+
+    [Fact]
+    public async Task SaveAsync_上传上限保存后读取生效()
+    {
+        var (svc, _) = Create();
+        await svc.GetAsync(); // 预热缓存：验证保存后缓存被清除、读取立即命中新值
+        await svc.SaveAsync(new SiteConfigSaveRequest { siteName = "TaoAdmin", uploadMaxSizeMB = 100 });
+        var dto = await svc.GetAsync();
+        Assert.Equal(100, dto.uploadMaxSizeMB);
+    }
+
+    [Fact]
+    public async Task SaveAsync_上传上限越界下界0_抛错()
+    {
+        var (svc, _) = Create();
+        await Assert.ThrowsAsync<DomainException>(() =>
+            svc.SaveAsync(new SiteConfigSaveRequest { siteName = "TaoAdmin", uploadMaxSizeMB = 0 }));
+    }
+
+    [Fact]
+    public async Task SaveAsync_上传上限越界上界2049_抛错()
+    {
+        var (svc, _) = Create();
+        await Assert.ThrowsAsync<DomainException>(() =>
+            svc.SaveAsync(new SiteConfigSaveRequest { siteName = "TaoAdmin", uploadMaxSizeMB = 2049 }));
+    }
+
+    [Fact]
+    public async Task SaveAsync_上传上限边界值1与2048_保存成功()
+    {
+        var (svc, _) = Create();
+        await svc.SaveAsync(new SiteConfigSaveRequest { siteName = "TaoAdmin", uploadMaxSizeMB = 1 });
+        Assert.Equal(1, (await svc.GetAsync()).uploadMaxSizeMB);
+        await svc.SaveAsync(new SiteConfigSaveRequest { siteName = "TaoAdmin", uploadMaxSizeMB = 2048 });
+        Assert.Equal(2048, (await svc.GetAsync()).uploadMaxSizeMB);
+    }
+
+    [Fact]
+    public async Task GetAsync_缓存命中_第二次读取直接返回缓存()
+    {
+        var (svc, db) = Create();
+        var first = await svc.GetAsync();
+        // 直接改库：若第二次读取落库应看到新值，命中缓存则仍是旧值
+        await db.Insertable(new SysSiteConfig
+        { Id = 1, ConfigKey = SiteConfigAppService.KeySiteName, ConfigValue = "库里新名字" }).ExecuteCommandAsync();
+        var second = await svc.GetAsync();
+        Assert.Equal(first.siteName, second.siteName);
+        Assert.Equal(SiteConfigAppService.DefaultSiteName, second.siteName);
+    }
+
+    [Fact]
+    public async Task GetAsync_库中非法值_回退默认50()
+    {
+        var (svc, db) = Create();
+        await db.Insertable(new SysSiteConfig
+        { Id = 1, ConfigKey = SiteConfigAppService.KeyUploadMaxSizeMB, ConfigValue = "abc" }).ExecuteCommandAsync();
+        var dto = await svc.GetAsync();
+        Assert.Equal(SiteConfigAppService.DefaultUploadMaxSizeMB, dto.uploadMaxSizeMB);
+    }
 }

@@ -102,13 +102,13 @@ public class AuthAppService
     private readonly OnlineSessionStore _sessions;
     private readonly IPasswordPolicyProvider _policy;
     private readonly ILoginSecurityProvider _security;
-    private readonly LoginLockoutStore _lockout;
+    private readonly ILoginLockoutStore _lockout;
     private readonly Common.Security.CaptchaService _captcha;
 
     public AuthAppService(ISqlSugarClient db, ISysUserRepository users, JwtTokenService jwt,
         Common.Cache.RedisHelper redis, PermissionAppService permission, OnlineSessionStore sessions,
         IPasswordPolicyProvider policy, ILoginSecurityProvider security,
-        LoginLockoutStore lockout, Common.Security.CaptchaService captcha)
+        ILoginLockoutStore lockout, Common.Security.CaptchaService captcha)
     {
         _db = db; _users = users; _jwt = jwt; _redis = redis; _permission = permission; _sessions = sessions;
         _policy = policy; _security = security; _lockout = lockout; _captcha = captcha;

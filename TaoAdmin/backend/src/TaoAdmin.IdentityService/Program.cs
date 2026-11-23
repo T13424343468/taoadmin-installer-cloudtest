@@ -7,6 +7,7 @@ using TaoAdmin.Common.Snowflake;
 using TaoAdmin.Common.Storage;
 using TaoAdmin.Domain.Repositories;
 using TaoAdmin.IdentityService.Handlers;
+using TaoAdmin.IdentityService.Services;
 using TaoAdmin.Infrastructure.Persistence;
 using TaoAdmin.Infrastructure.Repositories;
 using Scalar.AspNetCore;
@@ -103,6 +104,17 @@ builder.Services.AddScoped<RoleAppService>();
 builder.Services.AddScoped<MenuAppService>();
 builder.Services.AddScoped<ApiAppService>();
 builder.Services.AddSingleton<MonitorAppService>();
+// 资源监控（②）：本机指标采集 + 后台定时采样 + 历史趋势 + 阈值告警事件
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<TaoAdmin.Common.Monitoring.ResourceCollector>(_ =>
+    new TaoAdmin.Common.Monitoring.ResourceCollector(
+        "taoadmin-identity",
+        new TaoAdmin.Common.Monitoring.ProcessResourceSource()));
+builder.Services.AddSingleton<TaoAdmin.Common.Monitoring.ResourceHistoryStore>();
+builder.Services.AddSingleton<TaoAdmin.Common.Alerting.InMemoryAlertEventPublisher>();
+builder.Services.AddSingleton<TaoAdmin.Common.Alerting.IAlertEventPublisher>(sp =>
+    sp.GetRequiredService<TaoAdmin.Common.Alerting.InMemoryAlertEventPublisher>());
+builder.Services.AddHostedService<ResourceMonitorService>();
 // 扩展功能：工作流 / 多租户 / 站内消息 / 数据字典 / 操作日志 / 站点参数
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<WorkflowAppService>();
@@ -113,11 +125,20 @@ builder.Services.AddScoped<OperationLogAppService>();
 builder.Services.AddScoped<SiteConfigAppService>();
 builder.Services.AddScoped<AnnouncementAppService>();
 builder.Services.AddScoped<UserExcelAppService>();
+// 资源监控阈值（②）：存站点配置键，监控页可改
+builder.Services.AddScoped<ResourceThresholdProvider>();
 // 防护审计：登录安全（验证码/锁定策略读取口）——AuthAppService 登录链依赖 ILoginSecurityProvider
 builder.Services.AddScoped<LoginSecurityAppService>();
 builder.Services.AddScoped<ILoginSecurityProvider>(sp => sp.GetRequiredService<LoginSecurityAppService>());
 builder.Services.AddSingleton<TaoAdmin.Common.Security.CaptchaService>();
-builder.Services.AddSingleton<TaoAdmin.Common.Auth.LoginLockoutStore>();
+// 登录锁定账本（⑭）：失败计数/锁定状态/剩余时间全存 Redis（带过期），重启不清零；
+// Redis 不可用时降级放行（fail-open）并记 Warning，恢复后账本继续生效
+builder.Services.AddSingleton<TaoAdmin.Common.Auth.IRedisLockoutDatabase>(sp =>
+    new TaoAdmin.Common.Auth.RedisLockoutDatabaseAdapter(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+builder.Services.AddSingleton<TaoAdmin.Common.Auth.ILoginLockoutStore>(sp =>
+    new TaoAdmin.Common.Auth.RedisLoginLockoutStore(
+        sp.GetRequiredService<TaoAdmin.Common.Auth.IRedisLockoutDatabase>(),
+        sp.GetService<Microsoft.Extensions.Logging.ILogger<TaoAdmin.Common.Auth.RedisLoginLockoutStore>>()));
 builder.Services.AddSingleton<TaoAdmin.Application.Services.AuditCleanupService>();
 builder.Services.AddSingleton<TaoAdmin.Application.Services.AuditTrail>();
 builder.Services.AddScoped<NotifyChannelAppService>();
@@ -184,6 +205,9 @@ var app = builder.Build();
 // ==================== 中间件管道 ====================
 app.UseSerilogRequestLogging();
 app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "taoadmin-identity" }));
+// 资源指标端点（②）：本进程 CPU/内存/磁盘/网络快照，供网关聚合与监控中心采样
+app.MapGet("/metrics/resources", (TaoAdmin.Common.Monitoring.ResourceCollector collector) =>
+    Results.Ok(collector.Collect()));
 app.UseAuthentication();
 // 会话吊销校验：强制下线后令牌即刻失效（依赖认证结果，须在 UseAuthentication 之后）
 app.UseMiddleware<TaoAdmin.IdentityService.Middleware.SessionRevocationMiddleware>();

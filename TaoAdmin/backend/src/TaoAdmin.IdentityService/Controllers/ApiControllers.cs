@@ -363,3 +363,49 @@ public class MonitorController : BaseApiController
         return ApiOk<object>(new { items, total, pageIndex, pageSize });
     }
 }
+
+/// <summary>资源监控入口（②）：实时快照、近期趋势、阈值设置与近期告警事件。</summary>
+[Route("monitor/resources")]
+public class ResourceMonitorController(
+    TaoAdmin.Common.Monitoring.ResourceHistoryStore history,
+    TaoAdmin.Common.Alerting.InMemoryAlertEventPublisher alerts,
+    ResourceThresholdProvider thresholds) : BaseApiController
+{
+    /// <summary>全部服务最新资源快照（含是否处于告警态由前端按阈值比对展示）</summary>
+    [HttpGet("current")]
+    [Permission("monitor:resource:list")]
+    public async Task<ApiResult<object>> Current()
+        => ApiOk<object>(new { items = history.LatestAll(), thresholds = await thresholds.GetAsync() });
+
+    /// <summary>单服务近期趋势（minutes 窗口内的采样序列，旧→新）</summary>
+    [HttpGet("history")]
+    [Permission("monitor:resource:list")]
+    public async Task<ApiResult<object>> History(
+        [FromQuery] string serviceName, [FromQuery] int minutes = 60)
+    {
+        var span = minutes is < 1 or > 1440 ? 60 : minutes;
+        var items = history.Since(serviceName, DateTime.Now.AddMinutes(-span));
+        return ApiOk<object>(new { serviceName, minutes = span, items, thresholds = await thresholds.GetAsync() });
+    }
+
+    /// <summary>读取资源异常阈值</summary>
+    [HttpGet("thresholds")]
+    [Permission("monitor:resource:list")]
+    public async Task<ApiResult<TaoAdmin.Common.Monitoring.ResourceThresholds>> Thresholds()
+        => ApiOk(await thresholds.GetAsync());
+
+    /// <summary>保存资源异常阈值（保存即生效，后台采样下一轮按新阈值评估）</summary>
+    [HttpPut("thresholds")]
+    [Permission("monitor:resource:manage")]
+    public async Task<ApiResult<object>> SaveThresholds([FromBody] TaoAdmin.Common.Monitoring.ResourceThresholds req)
+    {
+        await thresholds.SaveAsync(req);
+        return ApiOk("阈值已保存，立即生效");
+    }
+
+    /// <summary>近期资源告警事件（新→旧，最多 50 条）</summary>
+    [HttpGet("alerts")]
+    [Permission("monitor:resource:list")]
+    public ApiResult<object> Alerts()
+        => ApiOk<object>(new { items = alerts.Recent(50) });
+}

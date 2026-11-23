@@ -6,6 +6,7 @@ using Serilog;
 using Serilog.Sinks.Elasticsearch;
 using System.Threading.RateLimiting;
 using Yarp.ReverseProxy.Transforms;
+using TaoAdmin.GatewayService;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -110,6 +111,11 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
+// ==================== 资源监控（②）：本机指标 + 全服务聚合 ====================
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<GatewayResourceCollector>();
+builder.Services.AddSingleton<ResourceAggregationService>();
+
 // 接口文档：官方内置 OpenAPI + Scalar UI（网关本身仅暴露 /health 与反向代理，文档入口仅作说明页）
 builder.Services.AddOpenApi("v1", o =>
     o.AddDocumentTransformer((doc, ctx, ct) =>
@@ -133,6 +139,12 @@ if (builder.Configuration.GetValue<bool>("RateLimiting:Enabled", true))
     app.UseRateLimiter();
 // 健康检查端点（供监控中心探测）
 app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "taoadmin-gateway" }));
+// 资源指标端点（②）：本进程 CPU/内存/磁盘/网络快照，供网关聚合与监控中心采样
+app.MapGet("/metrics/resources", (GatewayResourceCollector collector) =>
+    Results.Ok(collector.Collect()));
+// 全服务资源聚合（②）：逐服务拉取指标汇总成一份视图
+app.MapGet("/metrics/aggregate", async (ResourceAggregationService aggregation, CancellationToken ct) =>
+    Results.Ok(await aggregation.AggregateAsync(ct)));
 // 登录/刷新接口放行，其余要求已认证
 app.UseAuthentication();
 app.UseAuthorization();

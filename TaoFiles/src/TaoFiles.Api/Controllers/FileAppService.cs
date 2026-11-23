@@ -50,14 +50,13 @@ public class PageOf<T>
 /// 文件应用服务：上传（MD5 去重/秒传）、分页列表、删除。
 /// 同一个文件反复上传只保留一份物理文件与一条记录——这正是「可反复使用」的核心。
 /// 亿级优化：总数按筛选条件缓存 5 分钟；深翻页走 (CreatedAt, Id) 游标（Keyset），恒定速度不随页码衰减。
+/// 上传体积上限（⑬）走 IUploadLimitProvider：站点配置为唯一事实源，超限返回明确中文报错。
 /// </summary>
-public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IConfiguration config, IMemoryCache cache)
+public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IUploadLimitProvider limitProvider, IMemoryCache cache, IConfiguration? config = null)
 {
-    private string[] AllowedExt => (config["FileStorage:AllowedExtensions"]
+    private string[] AllowedExt => ((config?["FileStorage:AllowedExtensions"])
         ?? ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.mp3,.mp4,.txt,.md,.csv")
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    private long MaxSizeBytes => (long)(config.GetValue("FileStorage:MaxSizeMB", 50)) * 1024 * 1024;
 
     /// <summary>上传：校验扩展名白名单与大小限制 → MD5 去重 → 落盘 → 登记记录</summary>
     public async Task<UploadResult> UploadAsync(IFormFile file, string? uploadBy, string? source)
@@ -66,7 +65,10 @@ public class FileAppService(ISqlSugarClient db, IFileStorageProvider storage, IC
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!AllowedExt.Contains(ext)) throw new DomainException($"不支持的文件类型：{ext}", 400);
-        if (file.Length > MaxSizeBytes) throw new DomainException($"文件超过大小限制（{MaxSizeBytes / 1024 / 1024}MB）", 400);
+        var limitBytes = await limitProvider.GetLimitBytesAsync();
+        if (file.Length > limitBytes)
+            throw new DomainException(
+                $"文件体积 {file.Length / 1048576.0:0.#}MB 超过上传上限 {limitBytes / 1048576.0:0.#}MB，请压缩后上传或联系管理员调整站点配置中的「上传体积上限」", 400);
 
         await using var stream = file.OpenReadStream();
 

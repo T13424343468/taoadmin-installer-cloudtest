@@ -14,6 +14,8 @@ public class SiteConfigSaveRequest
     public string? siteLogo { get; set; }
     /// <summary>页脚文案</summary>
     public string? siteFooter { get; set; }
+    /// <summary>上传体积上限（MB，1~2048；前端选文件即校验，文件中心后端同口径拦截）</summary>
+    public int uploadMaxSizeMB { get; set; } = 50;
 }
 
 /// <summary>站点参数（前台渲染用，未配置的键返回默认值）</summary>
@@ -25,6 +27,8 @@ public class SiteConfigDto
     public string siteLogo { get; set; } = "";
     /// <summary>页脚文案</summary>
     public string siteFooter { get; set; } = "";
+    /// <summary>上传体积上限（MB；前端选文件即校验，文件中心后端同口径拦截）</summary>
+    public int uploadMaxSizeMB { get; set; } = 50;
 }
 
 /// <summary>
@@ -40,11 +44,14 @@ public class SiteConfigAppService(ISqlSugarClient db, SnowflakeIdGenerator snowf
     public const string KeySiteName = "siteName";
     public const string KeySiteLogo = "siteLogo";
     public const string KeySiteFooter = "siteFooter";
+    /// <summary>上传体积上限键（MB）</summary>
+    public const string KeyUploadMaxSizeMB = "uploadMaxSizeMB";
 
-    /// <summary>内置默认值：站点名称（与现有界面文案一致），Logo/页脚为空表示未配置</summary>
+    /// <summary>内置默认值：站点名称（与现有界面文案一致），Logo/页脚为空表示未配置；上传体积默认 50MB</summary>
     public const string DefaultSiteName = "TaoAdmin";
     public const string DefaultSiteFooter = "TaoAdmin";
     public const string DefaultSiteLogo = "";
+    public const int DefaultUploadMaxSizeMB = 50;
 
     /// <summary>缓存键：整个站点参数 DTO 存一份，保存后整键清除</summary>
     public const string CacheKey = "sys:site-config:v1";
@@ -65,7 +72,9 @@ public class SiteConfigAppService(ISqlSugarClient db, SnowflakeIdGenerator snowf
         {
             siteName = ValueOf(KeySiteName, DefaultSiteName),
             siteLogo = ValueOf(KeySiteLogo, DefaultSiteLogo),
-            siteFooter = ValueOf(KeySiteFooter, DefaultSiteFooter)
+            siteFooter = ValueOf(KeySiteFooter, DefaultSiteFooter),
+            uploadMaxSizeMB = rows.FirstOrDefault(r => r.ConfigKey == KeyUploadMaxSizeMB)?.ConfigValue is { Length: > 0 } size
+                && int.TryParse(size, out var mb) && mb > 0 ? mb : DefaultUploadMaxSizeMB
         };
         cache.Set(CacheKey, dto, CacheTtl);
         return dto;
@@ -76,10 +85,13 @@ public class SiteConfigAppService(ISqlSugarClient db, SnowflakeIdGenerator snowf
     {
         if (string.IsNullOrWhiteSpace(req.siteName))
             throw new TaoAdmin.Domain.DomainException("站点名称不能为空", 400);
+        if (req.uploadMaxSizeMB is < 1 or > 2048)
+            throw new TaoAdmin.Domain.DomainException("上传体积上限须在 1~2048MB 之间", 400);
 
         await UpsertAsync(KeySiteName, req.siteName.Trim(), "站点名称");
         await UpsertAsync(KeySiteLogo, req.siteLogo?.Trim() ?? "", "站点Logo地址");
         await UpsertAsync(KeySiteFooter, req.siteFooter?.Trim() ?? "", "站点页脚文案");
+        await UpsertAsync(KeyUploadMaxSizeMB, req.uploadMaxSizeMB.ToString(), "上传体积上限（MB）");
 
         // 保存即清缓存：下一次读取直接落库，前台立即看到新门面
         cache.Remove(CacheKey);

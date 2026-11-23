@@ -42,6 +42,7 @@ public static class DbInitializer
         SeedWorkflowMenu(db, snowflake);
         SeedMessageMenu(db, snowflake);
         SeedAuditMenus(db, snowflake);
+        SeedResourceMonitorMenu(db, snowflake);
         // 菜单归并（老板反馈⑨）：示例类页面（租户/站内消息/工作流）单独成「示例演示」模块
         RegroupDemoMenus(db, snowflake);
 
@@ -99,6 +100,27 @@ public static class DbInitializer
                     new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = perm.Id, CreatedAt = now, UpdatedAt = now }
                 }).ExecuteCommand();
         }
+    }
+
+    /// <summary>资源监控菜单与权限种子（②，逐项幂等：挂系统监控目录下，含阈值设置按钮权限）</summary>
+    private static void SeedResourceMonitorMenu(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
+    {
+        var now = DateTime.Now;
+        var monDir = db.Queryable<SysMenu>().First(m => m.MenuName == "系统监控" && m.ParentId == 0);
+        if (monDir == null || db.Queryable<SysMenu>().Any(m => m.Component == "monitor/resource/index"))
+            return;
+
+        var menu = new SysMenu { Id = snowflake.NextId(), ParentId = monDir.Id, MenuName = "资源监控", MenuType = 1, Path = "/monitor/resource", Component = "monitor/resource/index", OrderNum = 4, Visible = true, Status = 1, CreatedAt = now, UpdatedAt = now };
+        var managePerm = new SysMenu { Id = snowflake.NextId(), ParentId = menu.Id, MenuName = "资源阈值设置", MenuType = 2, PermsCode = "monitor:resource:manage", OrderNum = 1, Status = 1, CreatedAt = now, UpdatedAt = now };
+        db.Insertable(new List<SysMenu> { menu, managePerm }).ExecuteCommand();
+
+        var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
+        if (adminRole != null)
+            db.Insertable(new List<SysRoleMenu>
+            {
+                new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now },
+                new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = managePerm.Id, CreatedAt = now, UpdatedAt = now }
+            }).ExecuteCommand();
     }
 
     /// <summary>站点参数菜单与权限种子（逐项幂等：已有数据不重复插入，兼容老库增量升级）</summary>

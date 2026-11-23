@@ -42,12 +42,21 @@ builder.Services.AddSingleton<IFileStorageProvider>(sp =>
         () => Snowflake.NextId()));
 builder.Services.AddScoped<FileAppService>();
 
+// 上传体积上限（⑬）：站点配置为唯一事实源（TaoFiles:SiteConfigUrl 拉取，60 秒缓存），
+// 不可达回退本地 FileStorage:MaxSizeMB；中间件按上限动态收紧请求体，不吃框架默认值
+builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IUploadLimitProvider, UploadLimitProvider>();
+
 // 跨域：允许管理后台等前端页面直接调用（如需收紧可改为白名单 origins）
 const string CorsPolicy = "fc-cors";
 builder.Services.AddCors(o => o.AddPolicy(CorsPolicy, p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 app.UseCors(CorsPolicy);
+
+// 上传体积中间件（⑬）：按站点配置动态收紧请求体上限（须在管道最前，先于模型绑定读体）
+app.UseMiddleware<UploadLimitMiddleware>();
 
 // 统一异常处理：业务异常转 400 JSON，其余转 500
 app.Use(async (ctx, next) =>

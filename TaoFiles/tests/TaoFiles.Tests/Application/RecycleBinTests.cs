@@ -40,7 +40,7 @@ public class RecycleBinTests : IDisposable
         db.CodeFirst.InitTables<SysFile>();
         var storage = new LocalFileStorageProvider(_root, () => 1710000000000000000L);
         var config = new ConfigurationBuilder().Build();
-        return (new FileAppService(db, storage, config, new MemoryCache(new MemoryCacheOptions())), db, storage);
+        return (new FileAppService(db, storage, new FixedUploadLimitProvider(), new MemoryCache(new MemoryCacheOptions()), config), db, storage);
     }
 
     /// <summary>造一条已落盘、已登记的文件记录，返回（记录, 磁盘相对路径）</summary>
@@ -151,6 +151,32 @@ public class RecycleBinTests : IDisposable
         Assert.NotNull(await storage.OpenAsync(path));
     }
 
+    [Fact]
+    public async Task Upload_SameContent_AliveRecord_ShouldReuseWithoutNewFile()
+    {
+        var (svc, db, storage) = Create();
+
+        // 第一次上传落盘落库；第二次同内容重传命中存活记录：秒传复用，不新建记录不落新物理文件
+        await using var first = new MemoryStream(new byte[] { 1, 2, 3 });
+        var created = await svc.UploadAsync(new StubFormFile(first, "f.png"), null, null);
+        Assert.False(created.reused);
+
+        await using var again = new MemoryStream(new byte[] { 1, 2, 3 });
+        var result = await svc.UploadAsync(new StubFormFile(again, "f.png"), null, null);
+
+        Assert.True(result.reused);
+        Assert.Equal(created.id, result.id);
+        Assert.Equal(created.fileUrl, result.fileUrl);
+        Assert.Single(await db.Queryable<SysFile>().ToListAsync());
+    }
+
+    /// <summary>固定上限桩：回收站用例不关心体积上限，给一个不会拦截的大值</summary>
+    private sealed class FixedUploadLimitProvider : IUploadLimitProvider
+    {
+        public Task<long> GetLimitBytesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(long.MaxValue / 2);
+    }
+
     /// <summary>最小 IFormFile 桩：FormFile 类型在测试环境依赖 HttpContext 不可用，上传去重只需流/文件名/长度</summary>
     private sealed class StubFormFile(Stream content, string fileName) : IFormFile
     {
@@ -159,7 +185,7 @@ public class RecycleBinTests : IDisposable
         public string Name => "file";
         public string FileName => fileName;
         public string ContentType => "application/octet-stream";
-        public string? ContentDisposition => null;
+        public string ContentDisposition => null!;
         public IHeaderDictionary Headers => new HeaderDictionary();
         public void CopyTo(Stream target) => content.CopyTo(target);
         public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default) => content.CopyToAsync(target, cancellationToken);
