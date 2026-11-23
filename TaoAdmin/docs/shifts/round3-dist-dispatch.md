@@ -40,3 +40,6 @@
 - ✅ ③④并行安装前端接入+中控界面（commit 3189ffe）：AgentNodeExecutor（POST /tasks + GET /progress 轮询，代理不可达转失败不抛出）+ ClusterInstallViewModel（四阶段只前进不回退、失败置红、整体均值）+ WPF PageCluster（机器清单/分配矩阵/进度实时滚动/并行安装/滚动升级坏机停住）。
 - 测试：84/84 全绿（原 53 + 新增 31，含实效断言：坏阶段停住、健康重试打满、迟到进度不回退、代理不可达静默跳过）。
 - 待续：⑤升级/回滚全链路细化（滚动升级编排已有，回滚动作待补）、⑥coverlet 覆盖账、代理端真实 HTTP 宿主（HttpListener 薄壳）与 Windows 代理包。
+- ✅ ⑤升级/回滚全链路（commit 26e5d86）：UpgradeLedger 上次可用清单留痕 + ClusterRollback 逐台回滚（无账停住/坏机停住不盲滚/离线拒绝）。
+- ✅ ⑥coverlet 覆盖账：coverlet.collector 6.0.2 接入，cobertura 出账——⑳Distributed 模块行覆盖 92.9%（1342/1444）；Deployer.Core 其余为单机版老引擎（9.8%），归存量补账班。
+- 第二期收口：90/90 测全绿，round3-dist 分支 5 个增量提交（116cd1e→a1dddd0），未碰 main。
