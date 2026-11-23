@@ -528,6 +528,14 @@ public class CredentialVaultGapTests : IDisposable
     [Fact]
     public void UnixFileMode_Supported_ShouldRestrictToOwner()
     {
+        if (OperatingSystem.IsWindows())
+        {
+            // Windows 无 UnixFileMode API：探针放行时真实调用必抛 PNSE（构造期密钥文件即触发）——
+            // 恰好证明探针确实在闸住这条调用，而非空转
+            Assert.Throws<PlatformNotSupportedException>(() =>
+                new CredentialVault(_dir, unixFileModeSupported: () => true));
+            return;
+        }
         var vault = new CredentialVault(_dir, unixFileModeSupported: () => true);
         vault.Store("n1", "pw");
 
