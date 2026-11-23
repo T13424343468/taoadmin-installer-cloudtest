@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using TaoAdmin.Deployer.Core;
+using TaoAdmin.Deployer.Core.Distributed;
 using TaoAdmin.Deployer.Core.Net;
 
 namespace TaoAdmin.Deployer.App;
@@ -15,11 +16,20 @@ public partial class MainWindow : Window
     private ObservableCollection<string> _stepItems = new();
     private System.Windows.Threading.DispatcherTimer? _etaTimer;
     private System.Windows.Threading.DispatcherTimer? _statusTimer;
+    private System.Windows.Threading.DispatcherTimer? _clusterTimer;
     private DateTime _deployStart;
     private int _doneWeight, _totalWeight;
     private CancellationTokenSource? _cts;
     private string _chosenRoute = "native";
     private bool _deployRunning;
+
+    // ---------------- 分布式中控状态 ----------------
+    private readonly ClusterTopology _clusterTopo = new();
+    private readonly ClusterInstallViewModel _clusterVm = new();
+    private readonly NodeProgressLedger _clusterLedger = new();
+    private readonly AgentNodeExecutor _clusterExecutor = new();
+    private ClusterOrchestrator? _clusterOrchestrator;
+    private bool _clusterRunning;
 
     public MainWindow()
     {
@@ -73,6 +83,7 @@ public partial class MainWindow : Window
         PageFail.Visibility = page == "fail" ? Visibility.Visible : Visibility.Collapsed;
         PageUninstall.Visibility = page == "uninstall" ? Visibility.Visible : Visibility.Collapsed;
         PageStatus.Visibility = page == "status" ? Visibility.Visible : Visibility.Collapsed;
+        PageCluster.Visibility = page == "cluster" ? Visibility.Visible : Visibility.Collapsed;
         TitleText.Text = page switch
         {
             "route" => "选择部署路线",
@@ -81,6 +92,7 @@ public partial class MainWindow : Window
             "fail" => "部署遇到问题",
             "uninstall" => "一键卸载",
             "status" => "服务状态",
+            "cluster" => "分布式部署（中控）",
             _ => "TaoAdmin 一键部署器",
         };
         if (page == "home") RefreshEnvironment();
@@ -129,6 +141,164 @@ public partial class MainWindow : Window
     {
         RefreshStatus();
         ShowPage("status");
+    }
+
+    // ---------------- 分布式中控 ----------------
+
+    private void OnClusterClick(object sender, RoutedEventArgs e) => ShowPage("cluster");
+
+    private void OnClusterAddNodeClick(object sender, RoutedEventArgs e)
+    {
+        var host = ClusterNodeHost.Text.Trim();
+        if (host.Length == 0)
+        {
+            MessageBox.Show(this, "请填写机器 IP。", "分布式部署", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (_clusterTopo.Nodes.Any(n => n.Host == host))
+        {
+            MessageBox.Show(this, "该机器已在清单中。", "分布式部署", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var node = new ClusterNode
+        {
+            Id = $"n{_clusterTopo.Nodes.Count + 1}",
+            Name = $"机器{_clusterTopo.Nodes.Count + 1}",
+            Host = host,
+            SshUser = string.IsNullOrWhiteSpace(ClusterNodeUser.Text) ? "root" : ClusterNodeUser.Text.Trim(),
+            State = NodeState.Pending,
+        };
+        _clusterTopo.Nodes.Add(node);
+
+        // 默认角色集：中间件 + 网关 + 前端 + 应用（推荐布局自动分配）
+        if (_clusterTopo.Roles.Count == 0)
+        {
+            _clusterTopo.Roles.Add(new ServiceRole { Id = "mysql", Name = "MySQL", Kind = ServiceKind.Database });
+            _clusterTopo.Roles.Add(new ServiceRole { Id = "redis", Name = "Redis", Kind = ServiceKind.Cache });
+            _clusterTopo.Roles.Add(new ServiceRole { Id = "gateway", Name = "网关", Kind = ServiceKind.Gateway });
+            _clusterTopo.Roles.Add(new ServiceRole { Id = "frontend", Name = "前端", Kind = ServiceKind.Frontend });
+            _clusterTopo.Roles.Add(new ServiceRole { Id = "app", Name = "应用服务", Kind = ServiceKind.AppService, Instances = 2 });
+        }
+        _clusterTopo.Placements = PlacementPlanner.Recommend(_clusterTopo);
+
+        ClusterNodeHost.Clear();
+        RefreshClusterMatrix();
+    }
+
+    private void RefreshClusterMatrix()
+    {
+        _clusterVm.Load(_clusterTopo);
+        ClusterNodeList.Items.Clear();
+        foreach (var n in _clusterTopo.Nodes)
+            ClusterNodeList.Items.Add($"{n.Name}  {n.Host}（{n.SshUser}）  状态：{n.State}");
+        ClusterMatrixText.Text = _clusterTopo.Placements.Count == 0
+            ? "添加机器后自动生成推荐布局（中间件→数据机、网关前端→边缘机、应用实例轮转均摊）。"
+            : "分配矩阵：" + string.Join("；", _clusterTopo.Placements
+                .Select(p => $"{p.RoleId}#{p.InstanceIndex}→{_clusterTopo.Nodes.First(n => n.Id == p.NodeId).Name}"));
+    }
+
+    private async void OnClusterStartClick(object sender, RoutedEventArgs e)
+    {
+        if (_clusterRunning) return;
+        if (_clusterTopo.Nodes.Count == 0)
+        {
+            MessageBox.Show(this, "请先添加机器。", "分布式部署", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _clusterRunning = true;
+        _cts = new CancellationTokenSource();
+        _clusterVm.ResetFailures();
+        _clusterOrchestrator = new ClusterOrchestrator(_clusterExecutor, _clusterLedger);
+        StartClusterTimer();
+
+        try
+        {
+            // 并行安装：所有在线机器同时下发，进度经账本+视图模型实时上屏
+            var results = await _clusterOrchestrator.InstallAllAsync(_clusterTopo, "cluster-install", failFast: false, _cts.Token);
+            foreach (var r in results) _clusterVm.ApplyResult(r);
+            ClusterOverallText.Text = _clusterVm.AnyFailed ? "部分机器安装失败，见红行提示" : "✓ 全部机器安装完成";
+        }
+        catch (OperationCanceledException)
+        {
+            ClusterOverallText.Text = "安装已取消";
+        }
+        catch (Exception ex)
+        {
+            ClusterOverallText.Text = $"安装失败：{ex.Message}";
+        }
+        finally
+        {
+            _clusterRunning = false;
+            _clusterTimer?.Stop();
+        }
+    }
+
+    private async void OnClusterUpgradeClick(object sender, RoutedEventArgs e)
+    {
+        if (_clusterRunning) return;
+        if (_clusterTopo.Nodes.Count == 0)
+        {
+            MessageBox.Show(this, "请先添加机器。", "分布式部署", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _clusterRunning = true;
+        _cts = new CancellationTokenSource();
+        _clusterVm.ResetFailures();
+        _clusterOrchestrator ??= new ClusterOrchestrator(_clusterExecutor, _clusterLedger);
+        StartClusterTimer();
+
+        try
+        {
+            // 滚动升级：逐台更新，坏一台自动停住不往下走
+            var order = _clusterTopo.Nodes.Select(n => n.Id).ToList();
+            var results = await _clusterOrchestrator.RollingUpgradeAsync(_clusterTopo, order, "cluster-upgrade", _cts.Token);
+            foreach (var r in results) _clusterVm.ApplyResult(r);
+            ClusterOverallText.Text = "✓ 滚动升级完成";
+        }
+        catch (OperationCanceledException)
+        {
+            ClusterOverallText.Text = "升级已取消";
+        }
+        catch (Exception ex)
+        {
+            ClusterOverallText.Text = $"滚动停住：{ex.Message}";
+        }
+        finally
+        {
+            _clusterRunning = false;
+            _clusterTimer?.Stop();
+        }
+    }
+
+    private void StartClusterTimer()
+    {
+        // 进度轮询：每 2 秒拉一次各机代理进度入账并渲染（装环境→拉镜像→起服务→健康检查四阶段）
+        _clusterTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _clusterTimer.Tick += async (_, _) =>
+        {
+            foreach (var n in _clusterTopo.Nodes)
+                await _clusterExecutor.PollProgressAsync(n, _clusterLedger, CancellationToken.None);
+            foreach (var p in _clusterLedger.Snapshot())
+                _clusterVm.ApplyProgress(p);
+            RenderClusterProgress();
+        };
+        _clusterTimer.Start();
+    }
+
+    private void RenderClusterProgress()
+    {
+        ClusterNodeList.Items.Clear();
+        foreach (var r in _clusterVm.Rows)
+        {
+            var flag = r.Failed ? "✗" : (r.Percent >= 100 ? "✓" : "⏳");
+            ClusterNodeList.Items.Add(
+                $"{flag} {r.Name}  {r.Host}  [{r.PhaseText}] {r.Percent}%  {r.Message}");
+        }
+        ClusterOverallBar.Value = _clusterVm.OverallPercent;
+        ClusterOverallText.Text = $"整体 {_clusterVm.OverallPercent}%";
     }
 
     private void OnStatusRefreshClick(object sender, RoutedEventArgs e) => RefreshStatus();

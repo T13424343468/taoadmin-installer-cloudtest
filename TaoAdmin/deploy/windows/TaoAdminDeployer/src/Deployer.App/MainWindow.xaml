@@ -22,6 +22,7 @@
             <ListBox Grid.Row="1" x:Name="EnvList" FontSize="14" Margin="0,0,0,12" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
                 <Button x:Name="BtnDeploy" Style="{StaticResource BigButton}" Content="一键部署" Click="OnDeployClick"/>
+                <Button x:Name="BtnCluster" Style="{StaticResource BigButton}" Content="分布式部署" Click="OnClusterClick"/>
                 <Button x:Name="BtnUninstall" Style="{StaticResource BigButton}" Content="一键卸载" Click="OnUninstallClick"/>
                 <Button x:Name="BtnStatus" Style="{StaticResource BigButton}" Content="查看状态" Click="OnStatusClick"/>
             </StackPanel>
@@ -104,6 +105,51 @@
                     <Button Content="打开日志目录" Click="OnOpenLogDirClick"/>
                     <Button Content="回到主页" Click="OnHomeClick"/>
                 </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ Page: Cluster（分布式中控） ============ -->
+        <Grid Grid.Row="1" x:Name="PageCluster" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 机器清单录入 -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                <TextBlock Text="分布式部署（中控）" FontSize="18" FontWeight="Bold" Margin="0,0,0,8"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="ClusterNodeHost" Width="150" FontSize="14" Margin="0,0,8,0"
+                             VerticalContentAlignment="Center" Tag="机器 IP"/>
+                    <TextBox x:Name="ClusterNodeUser" Width="100" FontSize="14" Margin="0,0,8,0"
+                             VerticalContentAlignment="Center" Text="root" Tag="SSH 账号"/>
+                    <Button x:Name="BtnClusterAddNode" Content="添加机器" Click="OnClusterAddNodeClick" Margin="0,0,12,0"/>
+                    <Button x:Name="BtnClusterStart" Style="{StaticResource PrimaryButton}" Content="并行安装" Click="OnClusterStartClick"/>
+                    <Button x:Name="BtnClusterUpgrade" Content="滚动升级" Click="OnClusterUpgradeClick" Margin="12,0,0,0"/>
+                    <Button Content="回到主页" Click="OnHomeClick" Margin="12,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="ClusterMatrixText" FontSize="13" Foreground="#666" Margin="0,6,0,0"
+                           TextWrapping="Wrap" Text="添加机器后自动生成推荐布局（中间件→数据机、网关前端→边缘机、应用实例轮转均摊）。"/>
+            </StackPanel>
+
+            <!-- 整体进度 -->
+            <Grid Grid.Row="1" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar Grid.Column="0" x:Name="ClusterOverallBar" Height="20" Minimum="0" Maximum="100"/>
+                <TextBlock Grid.Column="1" x:Name="ClusterOverallText" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13" Foreground="#666"/>
+            </Grid>
+
+            <!-- 机器×四阶段进度列表 -->
+            <ListBox Grid.Row="2" x:Name="ClusterNodeList" FontSize="14" Margin="0,0,0,8"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button x:Name="BtnClusterLog" Content="打开日志目录" Click="OnOpenLogDirClick"/>
             </StackPanel>
         </Grid>
 
