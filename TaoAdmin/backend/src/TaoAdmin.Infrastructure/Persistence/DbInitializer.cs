@@ -89,6 +89,20 @@ public static class DbInitializer
                 }).ExecuteCommand();
         }
 
+        // 登录日志（⑰：审计日志的登录筛选视图，同一组件带 query 参数预置 category=login）
+        if (!db.Queryable<SysMenu>().Any(m => m.Component == "system/auditlog/login"))
+        {
+            var menu = new SysMenu { Id = snowflake.NextId(), ParentId = sysDir.Id, MenuName = "登录日志", MenuType = 1, Path = "/system/loginlog", Component = "system/auditlog/login", OrderNum = 12, Visible = true, Status = 1, CreatedAt = now, UpdatedAt = now };
+            var perm = new SysMenu { Id = snowflake.NextId(), ParentId = menu.Id, MenuName = "审计日志管理", MenuType = 2, PermsCode = "sys:audit:manage", OrderNum = 1, Status = 1, CreatedAt = now, UpdatedAt = now };
+            db.Insertable(new List<SysMenu> { menu, perm }).ExecuteCommand();
+            if (adminRole != null)
+                db.Insertable(new List<SysRoleMenu>
+                {
+                    new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now },
+                    new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = perm.Id, CreatedAt = now, UpdatedAt = now }
+                }).ExecuteCommand();
+        }
+
         // 通知渠道
         if (!db.Queryable<SysMenu>().Any(m => m.Component == "system/notifychannel/index"))
         {
