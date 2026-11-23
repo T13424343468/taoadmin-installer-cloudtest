@@ -17,13 +17,24 @@ public class FileController : BaseApiController
     private readonly FileAppService _svc;
     public FileController(FileAppService svc) => _svc = svc;
 
-    /// <summary>分页查询文件记录（keyword 按原文件名模糊；cursor=上一页 NextCursor 时走游标深翻页）</summary>
+    /// <summary>分页查询文件记录（keyword 按原文件名模糊；⑯支持 contentType 前缀与时间区间筛选；cursor=上一页 NextCursor 时走游标深翻页）</summary>
     [HttpGet]
     [Permission("sys:file:manage")]
     public async Task<ApiResult<PageResult<TaoAdmin.Domain.Entities.SysFile>>> Page(
         [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10, [FromQuery] string? keyword = null,
+        [FromQuery] string? contentType = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null,
         [FromQuery] string? cursor = null)
-        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, keyword, cursor));
+        => ApiOk(await _svc.PageAsync(pageIndex, pageSize, keyword, contentType, begin, end, cursor));
+
+    /// <summary>存储占用统计（⑯）：文件数与总字节数（未删除文件）</summary>
+    [HttpGet("stats")]
+    [Permission("sys:file:manage")]
+    public async Task<ApiResult<object>> Stats()
+    {
+        var (count, bytes) = await _svc.StorageStatsAsync();
+        object payload = new { count, totalBytes = bytes };
+        return ApiOk(payload);
+    }
 
     /// <summary>上传文件（multipart/form-data，字段名 file）</summary>
     [HttpPost("upload")]
