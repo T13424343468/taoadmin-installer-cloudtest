@@ -7,3 +7,4 @@ TaoFiles/src/TaoFiles.Api/uploads/
 .tmp-exe/
 .tmp-exe2/
 TestResults/
+.nfs*
