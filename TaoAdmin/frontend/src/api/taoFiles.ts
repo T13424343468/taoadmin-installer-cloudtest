@@ -68,10 +68,20 @@ export async function listFiles(params: {
   pageIndex: number;
   pageSize: number;
   keyword?: string;
+  /** ⑯ 类型筛选：contentType 前缀（如 image/） */
+  contentType?: string;
+  /** ⑯ 上传时间区间（闭区间） */
+  begin?: string;
+  end?: string;
   /** 上一页返回的游标：带上后走游标翻页，深翻页恒定速度 */
   cursor?: string;
 }): Promise<FilePage> {
   return fcRequest<FilePage>({ method: 'GET', url: '/api/files', params });
+}
+
+/** ⑯ 存储占用统计：文件数与总字节数（未删除文件） */
+export async function getFileStats(): Promise<{ count: number; totalBytes: number }> {
+  return fcRequest<{ count: number; totalBytes: number }>({ method: 'GET', url: '/api/files/stats' });
 }
 
 export interface UploadResult extends FileItem {

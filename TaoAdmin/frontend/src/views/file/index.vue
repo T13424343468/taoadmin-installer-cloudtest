@@ -20,6 +20,19 @@
         @search="onSearch"
       />
 
+      <a-select v-model:value="typeFilter" style="width: 130px" allow-clear placeholder="全部类型" @change="onSearch">
+        <a-select-option value="image/">图片</a-select-option>
+        <a-select-option value="application/pdf">PDF</a-select-option>
+        <a-select-option value="application/zip">压缩包</a-select-option>
+        <a-select-option value="text/">文本</a-select-option>
+        <a-select-option value="video/">视频</a-select-option>
+        <a-select-option value="audio/">音频</a-select-option>
+      </a-select>
+
+      <a-range-picker v-model:value="timeRange" show-time value-format="YYYY-MM-DD HH:mm:ss" @change="onSearch" />
+
+      <a-tag v-if="storageStats" class="storage-tag">存储：{{ storageStats.count }} 个 / {{ formatSize(storageStats.totalBytes) }}</a-tag>
+
       <a-radio-group v-model:value="viewMode" button-style="solid" @change="onViewChange">
         <a-radio-button value="list">文件列表</a-radio-button>
         <a-radio-button value="recycle">回收站</a-radio-button>
@@ -65,6 +78,9 @@
         <template v-else-if="column.key === 'fileName'">
           <div>{{ record.fileName }}</div>
           <div class="sub">{{ formatSize(record.size) }} · {{ record.source || '手动上传' }} · {{ record.md5.slice(0, 8) }}…</div>
+        </template>
+        <template v-else-if="column.key === 'size'">
+          {{ formatSize(record.size) }}
         </template>
         <template v-else-if="column.key === 'fileUrl'">
           <a class="path-link" @click="onCopy(record)">{{ record.fileUrl }}</a>
@@ -154,6 +170,7 @@ import {
   setTaoFilesBase,
   pingTaoFiles,
   copyText,
+  getFileStats,
   type FileItem,
 } from '@/api/taoFiles';
 
@@ -211,6 +228,28 @@ const recycleColumns = [
 ];
 
 const query = reactive({ pageIndex: 1, pageSize: 10 });
+
+// ============ ⑯ 类型/时间筛选 + 存储统计 ============
+
+const typeFilter = ref<string | undefined>();
+const timeRange = ref<[string, string] | undefined>();
+const storageStats = ref<{ count: number; totalBytes: number } | null>(null);
+
+function filterParams() {
+  const r = timeRange.value;
+  return {
+    contentType: typeFilter.value || undefined,
+    ...(r && r[0] && r[1] ? { begin: r[0], end: r[1] } : {}),
+  };
+}
+
+async function loadStorageStats(): Promise<void> {
+  try {
+    storageStats.value = await getFileStats();
+  } catch {
+    storageStats.value = null;
+  }
+}
 const total = ref(0);
 
 const addrOpen = ref(false);
@@ -230,6 +269,7 @@ const pagination = reactive({
 const columns = [
   { title: '预览', key: 'preview', width: 72 },
   { title: '文件名', key: 'fileName', ellipsis: true },
+  { title: '大小', key: 'size', width: 100 },
   { title: '相对路径', key: 'fileUrl', ellipsis: true },
   { title: '上传时间', key: 'createdAt', width: 160 },
   { title: '操作', key: 'action', width: 140 },
@@ -267,6 +307,7 @@ async function loadData(page = query.pageIndex): Promise<void> {
       pageIndex: page,
       pageSize: pagination.pageSize,
       keyword: keyword.value || undefined,
+      ...filterParams(),
       ...(prevCursor ? { cursor: prevCursor } : {}),
     });
     files.value = data.list || [];
@@ -443,7 +484,10 @@ function onSaveAddr(): void {
   loadData(1);
 }
 
-onMounted(() => loadData(1));
+onMounted(() => {
+  void loadData(1);
+  void loadStorageStats();
+});
 </script>
 
 <style scoped lang="less">
@@ -487,6 +531,10 @@ onMounted(() => loadData(1));
 .sub {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
+}
+
+.storage-tag {
+  font-size: 12px;
 }
 
 .path-link {
