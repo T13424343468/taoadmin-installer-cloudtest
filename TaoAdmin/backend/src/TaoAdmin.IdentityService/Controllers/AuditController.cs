@@ -20,11 +20,14 @@ public class AuditController : BaseApiController
     private readonly OperationLogAppService _logs;
     private readonly AuditCleanupService _cleanup;
     private readonly AuditTrail _trail;
+    private readonly AuditLogExcelAppService _excel;
 
     public AuditController(LoginSecurityAppService security, Common.Security.CaptchaService captcha,
-        OperationLogAppService logs, AuditCleanupService cleanup, AuditTrail trail)
+        OperationLogAppService logs, AuditCleanupService cleanup, AuditTrail trail,
+        AuditLogExcelAppService excel)
     {
         _security = security; _captcha = captcha; _logs = logs; _cleanup = cleanup; _trail = trail;
+        _excel = excel;
     }
 
     /// <summary>获取登录验证码（SVG，一次性答案缓存 5 分钟）</summary>
@@ -84,6 +87,20 @@ public class AuditController : BaseApiController
         await _trail.WriteAsync(User.GetUserId(), User.GetUserName(), 0, "audit:log/batch-delete",
             null, new { count = req.Ids.Count, deleted }, Ip);
         return ApiOk<object>(new { deleted }, "批量删除完成");
+    }
+
+    /// <summary>按当前筛选条件导出审计日志为 xlsx（⑮；上限 5 万条，超出请收窄筛选；本操作自动留痕）</summary>
+    [HttpGet("log/export")]
+    [Permission("sys:audit:manage")]
+    public async Task<IActionResult> ExportLogs([FromQuery] string? category = null, [FromQuery] string? userName = null,
+        [FromQuery] int? success = null, [FromQuery] DateTime? begin = null, [FromQuery] DateTime? end = null)
+    {
+        var (content, count) = await _excel.ExportAsync(category, userName, success, begin, end);
+        await _trail.WriteAsync(User.GetUserId(), User.GetUserName(), 0, "audit:log/export",
+            null, new { category, userName, success, begin, end, exported = count }, Ip);
+        return File(content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"audit-log-{DateTime.Now:yyyyMMddHHmmss}.xlsx");
     }
 }
 
