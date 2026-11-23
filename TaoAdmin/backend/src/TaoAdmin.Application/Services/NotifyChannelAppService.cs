@@ -6,16 +6,18 @@ using SqlSugar;
 namespace TaoAdmin.Application.Services;
 
 /// <summary>
-/// 通知渠道配置服务（只埋不接线）：SMTP/短信网关配置存 sys_site_config（notify_ 前缀），
-/// 保存即落库生效；发送通道为 ISmsSender/IEmailSender 占位实现，不发真实请求。
+/// 通知渠道配置服务：SMTP/钉钉 Webhook/告警接收人配置存 sys_site_config（notify_ 前缀），
+/// 保存即落库生效；发送通道为 SmtpEmailSender（真实 SMTP）与 DingTalkSender（真实 Webhook），
+/// 配置运行时从库读取，代码不落任何真实账号密码。
 /// 白名单键：防任意键注入；值不脱敏落审计（由审计侧统一掩码 secret/token 类字段）。
 /// </summary>
 public class NotifyChannelAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
 {
-    /// <summary>可配置键白名单（SMTP 服务器/端口/账号/发件人、短信网关/签名）</summary>
+    /// <summary>可配置键白名单（SMTP 服务器/端口/账号/密码/发件人、钉钉 Webhook、告警接收人、短信网关/签名）</summary>
     public static readonly string[] KnownKeys =
     {
-        "notify_smtp_host", "notify_smtp_port", "notify_smtp_user", "notify_smtp_from",
+        "notify_smtp_host", "notify_smtp_port", "notify_smtp_user", "notify_smtp_pass", "notify_smtp_from",
+        "notify_dingtalk_webhook", "notify_alert_receivers",
         "notify_sms_gateway", "notify_sms_sign"
     };
 
@@ -48,7 +50,7 @@ public class NotifyChannelAppService(ISqlSugarClient db, SnowflakeIdGenerator sn
                 await db.Insertable(new SysSiteConfig
                 {
                     Id = snowflake.NextId(),
-                    ConfigKey = kv.Key, ConfigValue = kv.Value, Remark = "通知渠道配置（未接线）"
+                    ConfigKey = kv.Key, ConfigValue = kv.Value, Remark = "通知渠道配置"
                 }).ExecuteCommandAsync();
             }
             else

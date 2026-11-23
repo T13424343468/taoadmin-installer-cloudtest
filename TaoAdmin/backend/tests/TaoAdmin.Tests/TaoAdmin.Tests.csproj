@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\TaoAdmin.Application\TaoAdmin.Application.csproj" />
     <ProjectReference Include="..\..\src\TaoAdmin.GatewayService\TaoAdmin.GatewayService.csproj" />
     <ProjectReference Include="..\..\src\TaoAdmin.IdentityService\TaoAdmin.IdentityService.csproj" />
+    <ProjectReference Include="..\..\src\TaoAdmin.TaskService\TaoAdmin.TaskService.csproj" />
   </ItemGroup>
 
 </Project>

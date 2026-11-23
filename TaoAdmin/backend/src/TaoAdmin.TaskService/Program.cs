@@ -1,4 +1,5 @@
-﻿using TaoAdmin.Common.Cache;
+﻿using TaoAdmin.Application.Services;
+using TaoAdmin.Common.Cache;
 using Nacos;
 using Nacos.AspNetCore.V2;
 using TaoAdmin.Common.Snowflake;
@@ -86,6 +87,11 @@ builder.Services.AddSingleton<IJobFactory, JobFactory>();
 builder.Services.AddSingleton<ISchedulerFactory, StdSchedulerFactory>();
 builder.Services.AddHostedService<SchedulerHostedService>();
 builder.Services.AddScoped<HeartbeatJob>();
+// 告警通知接线：SMTP 真实发送 + 钉钉 Webhook 真实发送 + 执行历史记录（失败按规则触发告警）
+builder.Services.AddSingleton<DingTalkSender>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<AlertNotifier>();
+builder.Services.AddSingleton<JobExecutionRecorder>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.NumberHandling = JsonNumberHandling.WriteAsString);
@@ -119,7 +125,8 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ISqlSugarClient>();
-    db.CodeFirst.InitTables(typeof(SysJob));
+    db.CodeFirst.InitTables(typeof(SysJob), typeof(SysJobLog),
+        typeof(TaoAdmin.Domain.Entities.SysAlertRule), typeof(TaoAdmin.Domain.Entities.SysNotifyLog));
     // 库表与种子由 IdentityService 统一初始化；本服务只保证接口扫描可用，失败不阻塞启动
     try
     {

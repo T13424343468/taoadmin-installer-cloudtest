@@ -16,6 +16,8 @@ export interface JobItem {
   lastFireTime?: string;
   nextFireTime?: string;
   lastResult?: string;
+  /** 失败自动重试次数（0 表示不重试） */
+  retryCount?: number;
   createdAt?: string;
 }
 
@@ -28,6 +30,22 @@ export interface JobSaveParams {
   params?: string;
   misfirePolicy?: string;
   description?: string;
+  /** 失败自动重试次数（0 表示不重试） */
+  retryCount?: number;
+}
+
+/** 任务执行历史行（每次执行含重试各落一条） */
+export interface JobLogItem {
+  id: string;
+  jobId: string;
+  jobName: string;
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+  success: boolean;
+  message?: string | null;
+  /** 重试序号：0 为首次执行 */
+  retryIndex: number;
 }
 
 /** 分页查询任务 */
@@ -71,4 +89,9 @@ export function validateCron(cron: string): Promise<{ valid: boolean; nextFireTi
     method: 'get',
     params: { cron },
   });
+}
+
+/** 任务执行历史分页（倒序，最新在前） */
+export function getJobLogs(id: string, params: PageQuery): Promise<PageResult<JobLogItem>> {
+  return request<PageResult<JobLogItem>>({ url: `/job/jobs/${id}/logs`, method: 'get', params });
 }

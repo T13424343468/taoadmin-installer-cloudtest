@@ -51,9 +51,36 @@ public class JobController : BaseApiController
             lastFireTime = j.LastFireTime?.ToString("yyyy-MM-dd HH:mm:ss"),
             nextFireTime = j.NextFireTime?.ToString("yyyy-MM-dd HH:mm:ss"),
             lastResult = j.LastResult,
+            retryCount = j.RetryCount,
             createdAt = j.CreatedAt
         }).ToList();
         return ApiOk(new PageResult<JobItemDto>(total, pageIndex, pageSize, items));
+    }
+
+    /// <summary>任务执行历史（分页倒序，默认最近 20 次）</summary>
+    [HttpGet("{id}/logs")]
+    [Permission("sys:job:list")]
+    public async Task<ApiResult<PageResult<JobLogItemDto>>> Logs(string id,
+        [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20)
+    {
+        var jobId = long.Parse(id);
+        var query = _db.Queryable<SysJobLog>().Where(l => l.JobId == jobId);
+        var total = await query.CountAsync();
+        var rows = await query.OrderByDescending(l => l.StartTime)
+            .Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync();
+        var items = rows.Select(l => new JobLogItemDto
+        {
+            id = l.Id.ToString(),
+            jobId = l.JobId.ToString(),
+            jobName = l.JobName,
+            startTime = l.StartTime.ToString("yyyy-MM-dd HH:mm:ss"),
+            endTime = l.EndTime.ToString("yyyy-MM-dd HH:mm:ss"),
+            durationMs = l.DurationMs,
+            success = l.Success,
+            message = l.Message,
+            retryIndex = l.RetryIndex
+        }).ToList();
+        return ApiOk(new PageResult<JobLogItemDto>(total, pageIndex, pageSize, items));
     }
 
     /// <summary>新增任务</summary>
@@ -75,7 +102,7 @@ public class JobController : BaseApiController
         var job = await _db.Queryable<SysJob>().InSingleAsync(long.Parse(id));
         UpdateJob(job, req);
         await _db.Updateable(job)
-            .UpdateColumns(j => new { j.Name, j.Group, j.Cron, j.Handler, j.Params, j.Description, j.UpdatedAt })
+            .UpdateColumns(j => new { j.Name, j.Group, j.Cron, j.Handler, j.Params, j.Description, j.RetryCount, j.UpdatedAt })
             .ExecuteCommandAsync();
         await UnscheduleAsync(job.Name, job.Group);
         if (job.Status == "RUNNING") await ScheduleAsync(job);
@@ -164,6 +191,7 @@ public class JobController : BaseApiController
             Handler = req.handler,
             Params = req.@params,
             Description = req.description,
+            RetryCount = Math.Max(0, req.retryCount),
             Status = "RUNNING"
         };
         if (isNew) job.Id = _snowflake.NextId();
@@ -182,6 +210,7 @@ public class JobController : BaseApiController
         job.Handler = req.handler;
         job.Params = req.@params;
         job.Description = req.description;
+        job.RetryCount = Math.Max(0, req.retryCount);
     }
 
     private async Task ScheduleAsync(SysJob job)
