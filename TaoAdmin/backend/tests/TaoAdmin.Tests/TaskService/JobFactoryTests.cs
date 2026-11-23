@@ -95,4 +95,27 @@ public class JobFactoryTests
 
         Assert.IsType<PlainJob>(job);
     }
+
+    [Fact]
+    public void NewJob_UnregisteredTypeWithRecorder_ShouldWrapReflectionActivatedJob()
+    {
+        // 反射激活 + 记录器包装同时命中：覆盖 svc 为空且 recorder 非空的组合分支
+        var (sp, _) = CreateProvider(withRecorder: true);
+        var factory = new JobFactory(sp);
+
+        var job = factory.NewJob(Bundle(typeof(PlainJob)), null!);
+
+        var recording = Assert.IsType<RecordingJob>(job);
+        Assert.IsType<PlainJob>(recording.Inner);
+    }
+
+    [Fact]
+    public void ReturnJob_ShouldCompleteWithoutAction()
+    {
+        // ReturnJob 为显式空实现（Quartz 契约方法），调用不抛异常即覆盖
+        var (sp, _) = CreateProvider(withRecorder: false);
+        var factory = new JobFactory(sp);
+
+        factory.ReturnJob(new PlainJob());
+    }
 }

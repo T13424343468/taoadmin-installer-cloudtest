@@ -245,4 +245,20 @@ public class JobExecutionRecorderTests
 
         Assert.Equal(0, count);
     }
+
+    [Fact]
+    public async Task ExecuteWithRecording_JobNotFound_FailureExhausted_ShouldStillEvaluateAlert()
+    {
+        // 库里查不到任务（job 为 null）：重试耗尽路径仍要落失败记录并触发告警评估，
+        // 覆盖 CountConsecutiveFailuresAsync(0) 与 NotifyAsync 的空任务分支
+        await SeedRule(threshold: 1);
+        var inner = new ScriptedJob(false);
+
+        await _recorder.ExecuteWithRecordingAsync(inner, Context("ghostJob", "default"));
+
+        Assert.Equal(1, inner.Executions);
+        Assert.Equal(1, _email.Calls); // 连续失败 1 次达到阈值 1
+        var notifyLog = _db.Queryable<SysNotifyLog>().Single();
+        Assert.Contains("ghostJob", notifyLog.Subject);
+    }
 }
