@@ -162,7 +162,9 @@ import {
   pauseJob,
   resumeJob,
   runJobOnce,
+  getJobLogs,
   type JobItem,
+  type JobLogItem,
 } from '@/api/job';
 
 const loading = ref(false);
@@ -245,7 +247,8 @@ const form = reactive<{
   handler: string;
   params?: string;
   description?: string;
-}>({ name: '', cron: '', handler: '' });
+  retryCount?: number;
+}>({ name: '', cron: '', handler: '', retryCount: 0 });
 
 const formRules = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
@@ -257,7 +260,7 @@ function openForm(record?: JobItem) {
   if (record) {
     Object.assign(form, { ...record });
   } else {
-    Object.assign(form, { id: undefined, name: '', group: '', cron: '', handler: '', params: '', description: '' });
+    Object.assign(form, { id: undefined, name: '', group: '', cron: '', handler: '', params: '', description: '', retryCount: 0 });
   }
   formVisible.value = true;
 }
@@ -348,6 +351,56 @@ function onRunOnce(record: JobItem) {
       loadData();
     },
   });
+}
+
+// ============ 执行历史（⑫） ============
+
+const historyVisible = ref(false);
+const historyLoading = ref(false);
+const historyJob = ref<JobItem | null>(null);
+const historyLogs = ref<JobLogItem[]>([]);
+const historyPagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => `共 ${t} 条`,
+});
+
+const historyColumns = [
+  { title: '开始时间', dataIndex: 'startTime', key: 'startTime', width: 170 },
+  { title: '结果', key: 'success', width: 80 },
+  { title: '耗时', dataIndex: 'durationMs', key: 'durationMs', width: 90 },
+  { title: '重试序号', dataIndex: 'retryIndex', key: 'retryIndex', width: 90 },
+  { title: '失败原因', key: 'message', ellipsis: true },
+];
+
+async function openHistory(record: JobItem) {
+  historyJob.value = record;
+  historyVisible.value = true;
+  historyPagination.current = 1;
+  await fetchHistory();
+}
+
+async function fetchHistory() {
+  if (!historyJob.value) return;
+  historyLoading.value = true;
+  try {
+    const res = await getJobLogs(historyJob.value.id, {
+      pageIndex: historyPagination.current,
+      pageSize: historyPagination.pageSize,
+    });
+    historyLogs.value = res.items || [];
+    historyPagination.total = res.total || 0;
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function onHistoryPageChange(pag: any) {
+  historyPagination.current = pag.current;
+  historyPagination.pageSize = pag.pageSize;
+  fetchHistory();
 }
 
 onMounted(() => loadData());

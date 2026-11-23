@@ -44,6 +44,7 @@ public static class DbInitializer
         SeedMessageMenu(db, snowflake);
         SeedAuditMenus(db, snowflake);
         SeedResourceMonitorMenu(db, snowflake);
+        SeedApiDocsMenu(db, snowflake);
         // 菜单归并（老板反馈⑨）：示例类页面（租户/站内消息/工作流）单独成「示例演示」模块
         RegroupDemoMenus(db, snowflake);
 
@@ -122,6 +123,22 @@ public static class DbInitializer
                 new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now },
                 new() { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = managePerm.Id, CreatedAt = now, UpdatedAt = now }
             }).ExecuteCommand();
+    }
+
+    /// <summary>接口文档菜单种子（⑦，逐项幂等：挂系统监控目录下，页面内嵌聚合三个服务文档）</summary>
+    private static void SeedApiDocsMenu(ISqlSugarClient db, SnowflakeIdGenerator snowflake)
+    {
+        var now = DateTime.Now;
+        var monDir = db.Queryable<SysMenu>().First(m => m.MenuName == "系统监控" && m.ParentId == 0);
+        if (monDir == null || db.Queryable<SysMenu>().Any(m => m.Component == "monitor/apidocs/index"))
+            return;
+
+        var menu = new SysMenu { Id = snowflake.NextId(), ParentId = monDir.Id, MenuName = "接口文档", MenuType = 1, Path = "/monitor/apidocs", Component = "monitor/apidocs/index", OrderNum = 5, Visible = true, Status = 1, CreatedAt = now, UpdatedAt = now };
+        db.Insertable(menu).ExecuteCommand();
+
+        var adminRole = db.Queryable<SysRole>().First(r => r.RoleCode == "admin");
+        if (adminRole != null)
+            db.Insertable(new SysRoleMenu { Id = snowflake.NextId(), RoleId = adminRole.Id, MenuId = menu.Id, CreatedAt = now, UpdatedAt = now }).ExecuteCommand();
     }
 
     /// <summary>站点参数菜单与权限种子（逐项幂等：已有数据不重复插入，兼容老库增量升级）</summary>

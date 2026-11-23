@@ -152,6 +152,8 @@ app.UseAuthorization();
 if (builder.Configuration.GetValue<bool>("CircuitBreaker:Enabled", true))
     app.UseMiddleware<TaoAdmin.Common.Resilience.CircuitBreakerMiddleware>();
 app.MapOpenApi(); // /openapi/v1.json
+// ⑥ 文档访问限制：默认仅本机可看，站点配置 DocsAccess:Mode 可放宽为登录后可看（须在文档端点之前）
+app.UseMiddleware<TaoAdmin.Common.Web.ApiDocsAccessMiddleware>();
 app.MapScalarApiReference(c => c.WithTitle("TaoAdmin 网关")); // /scalar 可视化文档
 app.MapReverseProxy().RequireRateLimiting("global");
 

@@ -2,6 +2,7 @@
 using TaoFiles.Api.Entities;
 using TaoFiles.Api.Storage;
 using Microsoft.AspNetCore.Mvc;
+using Scalar.AspNetCore;
 using SqlSugar;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,13 +10,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddOpenApi("v1", o =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    o.OpenApiVersion = Microsoft.OpenApi.OpenApiSpecVersion.OpenApi3_0;
+    o.AddDocumentTransformer((doc, ctx, ct) =>
     {
-        Title = "文件中心 API",
-        Version = "v1",
-        Description = "独立文件管理服务：上传（MD5 去重/秒传）、列表、删除、下载。业务系统只需保存返回的相对路径。"
+        doc.Info = new Microsoft.OpenApi.OpenApiInfo
+        {
+            Title = "文件中心 API",
+            Version = "v1",
+            Description = "独立文件管理服务：上传（MD5 去重/秒传）、列表、删除、下载。业务系统只需保存返回的相对路径。"
+        };
+        return Task.CompletedTask;
     });
 });
 
@@ -101,12 +107,10 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads",
     ServeUnknownFileTypes = true
 });
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "文件中心 API v1");
-    c.DocumentTitle = "文件中心";
-});
+app.MapOpenApi(); // /openapi/v1.json
+// ⑤ 文档界面换 Scalar，与其他服务一致；/swagger 旧地址 308 重定向到 /scalar 保持兼容
+app.MapScalarApiReference(c => c.WithTitle("文件中心 API"));
+app.MapGet("/swagger", () => Results.Redirect("/scalar", permanent: true));
 
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "file-center" }));

@@ -232,6 +232,8 @@ app.UseMiddleware<TaoAdmin.Common.MultiTenancy.TenantMiddleware>();
 // 操作日志：记录写操作与登录审计（异步落库，不阻塞请求）
 app.UseMiddleware<TaoAdmin.IdentityService.Middleware.OperationLogMiddleware>();
 app.MapOpenApi(); // /openapi/v1.json
+// ⑥ 文档访问限制：默认仅本机可看，站点配置 DocsAccess:Mode 可放宽为登录后可看（须在文档端点之前）
+app.UseMiddleware<TaoAdmin.Common.Web.ApiDocsAccessMiddleware>();
 app.MapScalarApiReference(c => c.WithTitle("TaoAdmin 权限服务")); // /scalar 可视化文档
 app.MapControllers();
 

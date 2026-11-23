@@ -25,7 +25,7 @@
         </a-form-item>
         <a-divider orientation="left">钉钉机器人</a-divider>
         <a-form-item label="Webhook 地址">
-          <a-input v-model:value="form.notify_dingtalk_webhook" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." />
+          <a-input v-model:value="form.notify_dingtalk_webhook" placeholder="oapi.dingtalk.com/robot/send?access_token=..." />
         </a-form-item>
         <a-form-item>
           <a-space>
@@ -154,7 +154,7 @@ const KEYS = [
 ];
 
 const configs = reactive<Record<string, string>>({});
-const form = reactive<Record<string, string>>({});
+const form = reactive<Record<string, string | undefined>>({});
 const saving = ref(false);
 const testing = ref<'email' | 'dingtalk' | null>(null);
 const port = computed<number | undefined>({
@@ -175,7 +175,7 @@ const ruleForm = reactive<{
   threshold: number;
   channelChecked: string[];
   remark?: string;
-}>({ name: '', eventType: 'SERVICE_DOWN', threshold: 1, channelChecked: ['email'] });
+}>({ id: undefined, name: '', eventType: 'SERVICE_DOWN', threshold: 1, channelChecked: ['email'], remark: undefined });
 
 const ruleFormRules = {
   name: [{ required: true, message: '请输入规则名称', trigger: 'blur' }],

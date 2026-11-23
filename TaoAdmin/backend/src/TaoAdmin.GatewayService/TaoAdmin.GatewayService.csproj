@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\TaoAdmin.Common\TaoAdmin.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 测试工程可访问 internal 成员（如网关资源采集器的读数方法） -->
     <InternalsVisibleTo Include="TaoAdmin.Tests" />
   </ItemGroup>

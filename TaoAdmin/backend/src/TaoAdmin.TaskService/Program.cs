@@ -118,6 +118,8 @@ app.UseAuthorization();
 // 接口鉴权：按 SysApi 权限码校验（超管放行）
 app.UseMiddleware<TaoAdmin.Infrastructure.Web.ApiAuthMiddleware>();
 app.MapOpenApi(); // /openapi/v1.json
+// ⑥ 文档访问限制：默认仅本机可看，站点配置 DocsAccess:Mode 可放宽为登录后可看（须在文档端点之前）
+app.UseMiddleware<TaoAdmin.Common.Web.ApiDocsAccessMiddleware>();
 app.MapScalarApiReference(c => c.WithTitle("TaoAdmin 任务服务")); // /scalar 可视化文档
 app.MapControllers();
 
