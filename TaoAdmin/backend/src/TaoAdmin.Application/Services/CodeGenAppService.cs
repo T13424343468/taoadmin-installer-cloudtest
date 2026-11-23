@@ -152,10 +152,7 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
             {
                 if (existing.Contains(f.name.ToLowerInvariant())) continue;
                 var colSql = BuildColumnSql(f);
-                var addSql = db.CurrentConnectionConfig.DbType == SqlSugar.DbType.Sqlite
-                    ? $"ALTER TABLE `{table}` ADD COLUMN {colSql};"
-                    : $"ALTER TABLE `{table}` ADD COLUMN {colSql};";
-                await db.Ado.ExecuteCommandAsync(addSql);
+                await db.Ado.ExecuteCommandAsync($"ALTER TABLE `{table}` ADD COLUMN {colSql};");
                 result.executed = true;
                 result.actions.Add($"已加列 {f.name}（{f.dataType}）");
             }
@@ -284,9 +281,12 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
 
     // ==================== DDL 构建 ====================
 
+    /// <summary>方言判断缝隙：SQLite 走 sqlite_master/PRAGMA，其余走 information_schema（测试可覆写模拟 MySQL 方言）</summary>
+    protected virtual bool IsSqliteDialect => db.CurrentConnectionConfig.DbType == SqlSugar.DbType.Sqlite;
+
     private async Task<bool> TableExistsAsync(string table)
     {
-        if (db.CurrentConnectionConfig.DbType == SqlSugar.DbType.Sqlite)
+        if (IsSqliteDialect)
         {
             var conn = (Microsoft.Data.Sqlite.SqliteConnection)db.Ado.Connection;
             using var cmd = conn.CreateCommand();
@@ -301,7 +301,7 @@ public class CodeGenAppService(ISqlSugarClient db, SnowflakeIdGenerator snowflak
     private async Task<HashSet<string>> GetExistingColumnsAsync(string table)
     {
         var set = new HashSet<string>();
-        if (db.CurrentConnectionConfig.DbType == SqlSugar.DbType.Sqlite)
+        if (IsSqliteDialect)
         {
             var conn = (Microsoft.Data.Sqlite.SqliteConnection)db.Ado.Connection;
             using var cmd = conn.CreateCommand();

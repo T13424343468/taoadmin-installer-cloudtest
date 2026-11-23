@@ -29,7 +29,7 @@ public class CodeGenController : BaseApiController
     public async Task<ApiResult<object>> SaveDesign([FromBody] CodegenDesignSaveRequest req)
     {
         var id = await _svc.SaveDesignAsync(req);
-        return ApiOk(id.ToString());
+        return ApiOk<object>(id.ToString());
     }
 
     /// <summary>表设计详情</summary>
