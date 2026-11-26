@@ -108,6 +108,10 @@ public static class HeadlessRunner
         if (args.Contains("--force")) opt.Force = true;
         if (args.Contains("--keep-runtimes")) opt.KeepRuntimes = true;
         if (args.Contains("--yes")) opt.AssumeYes = true;
+        if (args.Contains("--skip-preflight")) opt.SkipPreFlight = true;
+        var retryIdx = Array.IndexOf(args, "--retry");
+        if (retryIdx >= 0 && retryIdx + 1 < args.Length && int.TryParse(args[retryIdx + 1], out var retries) && retries >= 0)
+            opt.RetryCount = retries;
         return opt;
     }
 

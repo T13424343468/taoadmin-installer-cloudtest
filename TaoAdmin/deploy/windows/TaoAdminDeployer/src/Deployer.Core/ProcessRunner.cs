@@ -8,6 +8,12 @@ public sealed record ProcessResult(int ExitCode, IReadOnlyList<string> Output)
 
 public static class ProcessRunner
 {
+    /// <summary>Last executed command line (boss order 2026-11-25: failure logs must carry the full command line).</summary>
+    public static string LastCommand { get; private set; } = "";
+
+    /// <summary>Last exit code captured by RunAsync.</summary>
+    public static int LastExitCode { get; private set; }
+
     public static bool Available(string fileName)
     {
         try
@@ -88,6 +94,10 @@ public static class ProcessRunner
 
         await Task.WhenAll(outTask, errTask);
         await process.WaitForExitAsync(ct);
+        LastCommand = string.IsNullOrWhiteSpace(workingDirectory)
+            ? $"{fileName} {arguments}"
+            : $"[{workingDirectory}] {fileName} {arguments}";
+        LastExitCode = process.ExitCode;
         return new ProcessResult(process.ExitCode, output);
     }
 

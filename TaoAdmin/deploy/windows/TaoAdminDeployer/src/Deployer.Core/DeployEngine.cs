@@ -24,6 +24,11 @@ public sealed class DeployOptions
     public bool KeepRuntimes { get; set; }
     public bool AssumeYes { get; set; }
 
+    /// <summary>Retries for build/publish steps (boss order 2026-11-25: retry + preflight + clear logs). 0 disables.</summary>
+    public int RetryCount { get; set; } = 2;
+    /// <summary>When true, the pre-deployment preflight checklist is skipped (not recommended).</summary>
+    public bool SkipPreFlight { get; set; }
+
     public const string DbPassword = "Micro@2026";
     public const string MySQLVersion = "8.0.37";
     public const string NodeVersion = "v22.23.5";
@@ -73,8 +78,12 @@ public sealed class DeployEngine
         _state = new StateStore(paths.StateFile);
     }
 
-    private void L(string msg) => Log?.Invoke(msg);
-    private void Out(string line) { if (!string.IsNullOrWhiteSpace(line)) StepOutput?.Invoke(CurrentStepId, line); }
+    private void L(string msg)
+    {
+        lock (_stepOutputLog) _stepOutputLog.Add(msg);
+        Log?.Invoke(msg);
+    }
+    private void Out(string line) { if (!string.IsNullOrWhiteSpace(line)) { lock (_stepOutputLog) _stepOutputLog.Add(line); StepOutput?.Invoke(CurrentStepId, line); } }
 
     // ---------------- plans ----------------
 
@@ -115,6 +124,29 @@ public sealed class DeployEngine
         var doneW = 0;
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
+        // ---- preflight (boss order 2026-11-25): check before touching anything ----
+        if (!_opt.SkipPreFlight)
+        {
+            CurrentStepId = "env-check";
+            StepStarted?.Invoke("env-check");
+            L("==== 部署前预检 ====");
+            var checks = await PreFlight.CheckAsync(_p, new PreFlightOptions(), ct);
+            foreach (var c in checks)
+                L($"{(c.Passed ? "√" : "×")} {c.Name}：{c.Detail}");
+            var failed = checks.Where(c => !c.Passed).ToList();
+            if (failed.Count > 0)
+            {
+                var summary = string.Join("；", failed.Select(f => $"{f.Name}（{f.Detail}）"));
+                var logPath = await WriteFailureLogAsync("preflight", "预检未通过",
+                    failed.Select(f => $"{f.Name}: {f.Detail}"), null, ct);
+                L("预检未通过，已停止部署（未做任何变更）。请处理后重新运行。");
+                L(logPath);
+                throw new InvalidOperationException("部署前预检未通过：" + summary);
+            }
+            L("预检全部通过，开始部署。");
+            ProgressChanged?.Invoke(doneW, total);
+        }
+
         foreach (var step in plan)
         {
             ct.ThrowIfCancellationRequested();
@@ -131,12 +163,32 @@ public sealed class DeployEngine
             L($"==== {step.Name} ====");
             try
             {
-                await RunStepAsync(step.Id, ct);
+                // Build/publish steps get automatic retry (boss order 2026-11-25);
+                // every failure is dumped to a fixed, easy-to-find log file.
+                var retriable = step.Id is "backend" or "frontend" or "db-init" or "compose-up";
+                if (retriable && _opt.RetryCount > 0)
+                {
+                    var stepId = step.Id;
+                    var stepName = step.Name;
+                    await Retry.RunAsync(new RetryOptions { Retries = _opt.RetryCount }, L,
+                        () => RunStepAsync(stepId, ct), ct);
+                }
+                else
+                {
+                    await RunStepAsync(step.Id, ct);
+                }
                 _state.MarkDone(step.Id);
                 StepSucceeded?.Invoke(step.Id);
             }
             catch (RebootRequiredException)
             {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var logPath = await WriteFailureLogAsync(step.Id, step.Name, null, ex, ct);
+                L("失败！完整命令行、退出码与输出已落盘：");
+                L(logPath);
                 throw;
             }
             doneW += step.Weight;
@@ -1071,6 +1123,44 @@ public sealed class DeployEngine
     }
 
     // ---------------- helpers ----------------
+
+    /// <summary>
+    /// Dump a failure to a fixed, easy-to-find log file (boss order 2026-11-25):
+    /// full command line, exit code, and the complete stdout/stderr of the failing
+    /// step. Returns the path so the console's last line can point the user to it.
+    /// </summary>
+    private async Task<string> WriteFailureLogAsync(string stepId, string stepName, IEnumerable<string>? details, Exception? ex, CancellationToken ct)
+    {
+        var file = DeployPaths.Join(_p.LogDir, $"FAILED-{stepId}.log");
+        try
+        {
+            Directory.CreateDirectory(_p.LogDir);
+            await using var w = new StreamWriter(file, append: false, System.Text.Encoding.UTF8);
+            await w.WriteLineAsync($"部署失败报告  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            await w.WriteLineAsync($"步骤: {stepName} ({stepId})");
+            await w.WriteLineAsync($"路线: {_opt.Route}");
+            await w.WriteLineAsync($"最近命令行: {ProcessRunner.LastCommand}");
+            await w.WriteLineAsync($"最近退出码: {ProcessRunner.LastExitCode}");
+            if (ex is not null)
+            {
+                await w.WriteLineAsync($"异常: {ex.GetType().Name}: {ex.Message}");
+                await w.WriteLineAsync("---- 堆栈 ----");
+                await w.WriteLineAsync(ex.StackTrace ?? "(无)");
+            }
+            if (details is not null)
+            {
+                await w.WriteLineAsync("---- 明细 ----");
+                foreach (var d in details) await w.WriteLineAsync(d);
+            }
+            await w.WriteLineAsync();
+            await w.WriteLineAsync("---- 本步骤全部输出（stdout/stderr 合并，按行） ----");
+            foreach (var line in _stepOutputLog) await w.WriteLineAsync(line);
+        }
+        catch { /* logging must never mask the original failure */ }
+        return file;
+    }
+
+    private readonly List<string> _stepOutputLog = new();
 
     private static void ExtractWithRetry(string zip, string dest, Action<string>? log)
     {
